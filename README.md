@@ -5,6 +5,15 @@ Windows向けの、RIGOL MHO984との互換性を目的とした**独立・非�
 
 > **重要:** 本プロジェクトは RIGOL Technologies Co., Ltd. またはその関連会社による公式製品ではなく、提携・承認・保証を受けたものでもありません。RIGOLおよび製品名は各権利者に帰属します。名称は互換性の対象を識別するためにのみ使用しています。
 
+## スクリーンショット
+
+[![MHO984 Toolkit Viewer](docs/images/viewer-beta7.webp)](docs/images/viewer-beta7.webp)
+
+*Viewer表示例。Analog波形、チャンネル選択、プロトコル帯、ズーム／パン／カーソル操作を1つの画面で扱えます。*
+
+**最新版のダウンロード:** [GitHub Releases](https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/releases)
+
+
 ## 対応状況
 
 - **MHO984: 実機検証済み**
