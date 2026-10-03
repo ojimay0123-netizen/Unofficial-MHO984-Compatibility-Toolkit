@@ -22,6 +22,16 @@ Windows向けの、RIGOL MHO984との互換性を目的とした**独立・非�
 
 詳細は [docs/SUPPORTED_MODELS.md](docs/SUPPORTED_MODELS.md) を参照してください。
 
+## 初回導入と確認
+
+1. [インストール・初回実行](docs/INSTALLATION.md)に従い、配布ZIPのチェックサム確認、Python準備、setup_venv.bat、起動、IP設定を行います。
+2. [実機確認手順](docs/HARDWARE_VALIDATION.md)でAnalog・D0–D15・同期・beta.7タイムアウトを確認します。
+3. 問題があれば[障害切り分け](docs/TROUBLESHOOTING.md)を参照してください。
+
+[既知の制限](docs/KNOWN_LIMITATIONS.md)には検証範囲と未評価項目を集約しています。SCPI既定ポートはTCP 5555、FTP制御はTCP 21です。Python/Tkinterと依存導入が必要で、正確な検証済みWindows/Python構成は追加確認中です。
+
+mainの文書更新は公開済みbeta.7タグ・Release ZIPに自動反映されません。
+
 ## 起動方法
 
 通常は **`START_MHO984_Toolkit.bat` だけを使用してください。**
