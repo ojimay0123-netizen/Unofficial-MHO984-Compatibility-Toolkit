@@ -1,0 +1,23 @@
+{
+  "schema": "mho984-digital-timebase-calibration",
+  "schema_version": 1,
+  "scale_correction_ppm": 2.091228967287936,
+  "scale_factor": 1.0000020912289673,
+  "reference_s": 0.0,
+  "formula": "t_corrected = reference + (t_raw-reference) * scale_factor",
+  "source_dataset": "mho984_0034",
+  "source_condition": "One function generator; 10 MHz and 12 MHz each split to Analog and Digital inputs",
+  "raw_drift_ppm": {
+    "CHAN1_D8": -2.0905748922040965,
+    "CHAN2_D0": -2.091883042371776
+  },
+  "expected_residual_ppm_after_default_correction": {
+    "CHAN1_D8": 0.0006497032520617269,
+    "CHAN2_D0": -0.0006584496512326166
+  },
+  "profile_role": "empirical_reference_only",
+  "enabled_by_default_in_public_viewer": false,
+  "universal_for_mho984": false,
+  "traceable_calibration": false,
+  "warning": "Derived from one tested instrument. Verify per instrument/firmware before use."
+}

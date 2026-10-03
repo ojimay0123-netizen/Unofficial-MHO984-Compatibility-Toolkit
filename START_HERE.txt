@@ -1,0 +1,24 @@
+MHO984 Toolkit v0.1.0-beta.7
+==============================
+
+通常は次の1ファイルだけを起動してください。
+
+  START_MHO984_Toolkit.bat
+
+メイン画面から以下を操作できます。
+- オシロから波形取得
+- MHO984で保存したMemory BINを開く（オフライン）
+- 既存データセットをViewerで開く
+- UART / RS-232 / RS-485 / I2C / SPI / LIN / CAN / GPS のプロトコル解析
+- IPアドレス / 保存先の設定
+- Python環境セットアップ
+- 診断情報ZIPの作成
+
+初回利用前に README.md / LEGAL_NOTICE.md / SECURITY.md を確認してください。
+
+
+Protocol overlay (beta.5):
+Protocol Analyzerでデコードを実行すると、既定では結果がViewerの元波形上へ自動反映されます。
+Viewer右側の「プロトコル帯」タブで表示ON/OFF、透明度、ラベル密度、再読込、クリアを操作できます。
+
+SINGLEが待機時間内にSTOPしない場合、統合GUIでは Force Trigger / さらに待つ / 中止 を選択できます。

@@ -1,0 +1,32 @@
+{
+  "release": "v0.1.0-beta.7",
+  "tested_at": "2026-10-03",
+  "checks": {
+    "py_compile_all_python": "PASS",
+    "orchestrator_cli_timeout_options": "PASS",
+    "settings_trigger_timeout_persistence": "PASS",
+    "trigger_timeout_force_branch": "PASS",
+    "trigger_timeout_wait_branch": "PASS",
+    "trigger_timeout_abort_branch": "PASS",
+    "headless_timeout_fail_safe": "PASS",
+    "viewer_mouse_cursor_hit_test": "preserved from beta.6",
+    "viewer_right_drag_pan": "preserved from beta.6",
+    "protocol_overlay": "preserved from beta.6",
+    "viewer_default_digital_mode": "Raw"
+  },
+  "safety": {
+    "interactive_timeout_dialog_only_when_explicit_flag_used": true,
+    "integrated_gui_passes_interactive_timeout_flag": true,
+    "headless_default_force_trigger": false,
+    "forced_trigger_limited_to_one_per_acquisition": true,
+    "failed_or_cancelled_capture_not_claimed_as_success": true
+  },
+  "timeout_dialog": {
+    "yes": "one-time :TFORce then wait for STOP",
+    "no": "wait one more configured interval",
+    "cancel": "abort acquisition",
+    "default_interval_seconds": 30,
+    "configurable_range_seconds": [1, 3600]
+  },
+  "note": "beta.7 fixes the integrated-GUI behavior where a SINGLE trigger timeout immediately terminated acquisition. It does not hide an unsatisfied trigger condition; the user explicitly chooses Force, Wait, or Abort."
+}
