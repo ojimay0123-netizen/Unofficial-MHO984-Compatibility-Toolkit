@@ -1,0 +1,25 @@
+name: Feature request / 機能要望
+description: Suggest an improvement to the Toolkit, Viewer, acquisition flow, or protocol analysis.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case / 課題・用途
+      description: What task are you trying to accomplish?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / 希望する動作
+      description: Describe the UI, workflow, decoder behavior, or output you would like.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context / 補足
+      description: Screenshots, diagrams, or sanitized examples are welcome.
