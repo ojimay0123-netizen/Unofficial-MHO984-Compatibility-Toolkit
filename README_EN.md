@@ -4,6 +4,15 @@ An independent, unofficial Windows toolkit for interoperability with the RIGOL M
 
 > This project is not an official RIGOL product and is not affiliated with, endorsed by, or warranted by RIGOL Technologies Co., Ltd. RIGOL and product names belong to their respective owners and are used only to identify the interoperability target.
 
+## Screenshot
+
+[![MHO984 Toolkit Viewer](docs/images/viewer-beta7.webp)](docs/images/viewer-beta7.webp)
+
+*Viewer example showing Analog waveforms, channel controls, protocol overlays, zoom/pan, and measurement cursors in one window.*
+
+**Download the latest beta:** [GitHub Releases](https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/releases)
+
+
 ## Start here
 
 Normal users should launch only **`START_MHO984_Toolkit.bat`**. If NumPy/Matplotlib are unavailable, use `Tools -> Set up Python environment` or run `setup_venv.bat`. Direct component launchers are kept under `advanced_launchers/` for troubleshooting.
