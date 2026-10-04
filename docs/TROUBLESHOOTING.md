@@ -9,7 +9,7 @@
 | 接続・機種識別失敗 | 本体IPとTCP 5555への到達性を確認。MHO984以外は意図的に拒否 |
 | SINGLE待機 | 信号・トリガ条件を確認。統合GUIで待機延長／今回だけForce／中止を選択。Force結果は通常トリガ取得と区別 |
 | 本体Memory BIN保存失敗 | 本体C:/空き容量とログを確認。ファイルを自動削除しない |
-| Automatic LAN retrieval failed | 作業データセットのlan_retrieval_r12.jsonを確認。TCP 21、FTPデータ接続、対象BIN名・サイズ安定・転送検証を切り分け |
+| Automatic LAN retrieval failed | 作業データセットのlan_retrieval_r12.jsonを確認。TCP 21、FTPデータ接続、対象BIN名、appearance_wait、動的SIZE安定、転送検証を切り分け |
 | デコード失敗 | MHO984 Memory waveform BINか、コピーが完了しているかを確認。Firmware、ファイルサイズ、デコード例外を記録 |
 | Digitalがない | 元BINのLAレコードと取得時LA/POD設定を確認。未記録チャンネルは復元できない |
 | Viewerが開かない | 下記依存import確認、メインログのViewer例外、対象データセットを確認 |
@@ -39,3 +39,10 @@ setupはpyを利用できますが、通常起動BATはグローバルのpyを�
 ## English
 
 Identify the last completed stage in the main log. Run the local venv Python in a console to expose startup errors. Check SCPI TCP 5555 separately from FTP TCP 21 and its data connection. Use lan_retrieval_r12.json for retrieval failures; performance_r12.json may not exist after failure. Check Memory BIN format and LA presence for decode/missing-channel problems. Report reproducible steps and sanitized diagnostics, not confidential raw waveforms. Interrupted datasets may remain; inspect scope state before retrying.
+
+
+### beta.9: 大容量BINが60秒を超えて成長する
+
+500 Mpts storage depth option等の大容量構成では、Memory BINがFTPに現れた後も1分以上成長することがあります。beta.9では固定60秒で失敗せず、RG03ヘッダ規模と実測成長速度からsoft deadlineを調整し、最大600秒まで監視します。
+
+`lan_retrieval_r12.json` で `appearance_wait`、`readiness.initial_wait_budget_s`、`readiness.observed_growth_rate_Bps`、`readiness.remote_size` を確認してください。ファイルが成長中なら待機は正常です。600秒のhard maximumまで安定しない場合は、取得深度・保存先空き容量・Firmware・LAN状態を記録してIssueへ添付してください。
