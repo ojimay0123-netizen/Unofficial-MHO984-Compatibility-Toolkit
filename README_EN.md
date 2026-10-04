@@ -1,4 +1,4 @@
-# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.7
+# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.9
 
 An independent, unofficial Windows toolkit for interoperability with the RIGOL MHO984. The acquisition engine is r12.11e and the Viewer is r13.5. Normal workflows are now launched from one main window.
 
@@ -16,10 +16,10 @@ An independent, unofficial Windows toolkit for interoperability with the RIGOL M
 ## Installation and verification
 
 1. Follow [Installation](docs/INSTALLATION.md) (English quick start included): verify the named release ZIP checksum, prepare Python/Tkinter, run setup_venv.bat, then start the toolkit and configure the scope IP.
-2. Use [Hardware validation](docs/HARDWARE_VALIDATION.md) for analog, D0–D15, alignment and beta.7 timeout checks.
+2. Use [Hardware validation](docs/HARDWARE_VALIDATION.md) for analog, D0–D15, alignment, SINGLE timeout, and beta.9 deep-memory acquisition checks.
 3. Consult [Troubleshooting](docs/TROUBLESHOOTING.md) and [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
-SCPI defaults to TCP 5555; FTP control uses TCP 21 plus a data connection. Exact validated Windows/Python/package combinations still need to be recorded. Documentation updates on main do not automatically replace the published beta.7 tag or ZIP.
+SCPI defaults to TCP 5555; FTP control uses TCP 21 plus a data connection. Exact validated Windows/Python/package combinations still need to be recorded. Documentation updates on main do not automatically replace published tags or Release ZIPs.
 
 ## Start here
 
@@ -49,7 +49,7 @@ The bundled +2.091228967 ppm digital timebase value is an empirical relative-ali
 
 ## Release status
 
-`v0.1.0-beta.7` is an **MHO984 validated / community testing beta**. Offline protocol decoding was introduced in beta.4; beta.7 improves SINGLE timeout handling. Protocol results are convenience analysis only and are not conformance certification. CAN FD is not implemented.
+`v0.1.0-beta.9` is an **MHO984 validated / community testing beta**. beta.9 adds firmware-save compatibility and capacity-aware dynamic FTP SIZE waiting for large Memory BIN captures; successful acquisition has been reported on a RIGOL loaner/demo MHO984 with the 500 Mpts storage depth option. Protocol results are convenience analysis only and are not conformance certification. CAN FD is not implemented.
 
 
 ## beta.5: Viewer protocol bands
@@ -63,6 +63,15 @@ Decoded protocol events can be overlaid directly on the original Viewer waveform
 - Right-drag in the waveform area pans the shared time axis and changes the mouse pointer while dragging.
 - Existing wheel zoom, Shift+wheel pan, keyboard cursor selection and sample stepping are preserved.
 
+
+### beta.9: capacity-aware deep-memory FTP wait
+
+- Removes the fixed 60-second stable-SIZE deadline for a file that is still growing.
+- Uses RG03 header size only as an observation-budget hint, never as the completion target.
+- Tracks observed FTP SIZE growth and extends the soft deadline when needed.
+- Keeps a 600-second hard maximum.
+- Requires six stable SIZE polls, exact local/remote byte equality, and RG03 decoder validation.
+- Hardware acquisition was reported successful on a RIGOL loaner/demo MHO984 with the 500 Mpts storage depth option.
 
 ### beta.7: SINGLE timeout handling
 
