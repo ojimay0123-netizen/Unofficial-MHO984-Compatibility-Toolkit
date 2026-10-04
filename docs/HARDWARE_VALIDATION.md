@@ -20,6 +20,21 @@
 | オフライン | 本体でMemory waveform BINを保存・PCへコピー。LANなしで開く | 元BINのCH、点数、時間範囲を復元。LA未記録ならDigitalなしが正しい |
 | 再現性 | 同条件を複数回、メモリ長やサンプルレートを変えて実施 | 同じ判定が再現。条件依存の不一致は未確認として報告 |
 
+## beta.9 Firmware / deep-memory validation
+
+Firmware更新後や大容量ストレージオプション搭載機では、Memory BINがFTP上に現れた後も長時間成長する場合があります。beta.9では固定60秒待機ではなく容量依存の動的待機を使用します。
+
+実機確認では、RIGOL貸出デモMHO984（500 Mpts storage depth option搭載）でbeta.9取得成功が報告されています（2026-10-04）。確認時は次を記録してください。
+
+- 本体画面に表示されるフルFirmware
+- Storage depth optionの有無
+- 取得Memory depth / sample rate / channel数
+- `lan_retrieval_r12.json` の `appearance_wait`、`initial_wait_budget_s`、`observed_growth_rate_Bps`
+- 最終remote SIZEとlocal BINサイズ
+- RG03デコード完了の有無
+
+完了条件はヘッダ宣言サイズ到達ではなく、FTP SIZE安定、local/remoteサイズ一致、RG03デコーダ検証です。
+
 ## beta.7タイムアウトの3分岐
 
 既知信号を使用し、トリガ条件が成立しない状態で短い待機時間を設定します。各分岐は別取得として試します。
@@ -44,7 +59,7 @@ Analog源ではしきい値・ヒステリシスを設定し、論理化波形�
 
 ## 公開済み証拠の範囲
 
-PUBLIC_RELEASE_AUDIT.mdには実機RG03の保存データ回帰（CH1/CH2/LA、D0–D15 12,500,000点）、合成プロトコル信号、モック取得、仮想表示GUI試験が記載されています。元の実機キャプチャは非同梱です。PUBLIC_RELEASE_TEST_REPORT.jsonのbeta.7 PASSは試験方式の内訳を十分に記載していないため、Force/Wait/Abortの実機完了をこの文書から推定しないでください。正確なWindows/Python構成、フルFirmware、全機能の実機検証表は追加確認が必要です。
+PUBLIC_RELEASE_AUDIT.mdには実機RG03の保存データ回帰（CH1/CH2/LA、D0–D15 12,500,000点）、合成プロトコル信号、モック取得、仮想表示GUI試験が記載されています。元の実機キャプチャは非同梱です。PUBLIC_RELEASE_TEST_REPORT.jsonにはbeta.9の大容量FTP待機回帰と貸出デモ機での成功報告を記録しています。Force/Wait/Abortの各分岐は別々の試験として扱ってください。正確なWindows/Python構成、フルFirmware、全機能の実機検証表は追加確認が必要です。
 
 ## English
 
