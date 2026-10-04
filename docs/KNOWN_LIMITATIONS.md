@@ -3,7 +3,7 @@
 | 範囲 | 制限 |
 |---|---|
 | 機種 | MHO984 validated beta。非MHO984のオンライン取得は機種ガードで拒否。他機種互換は未保証 |
-| Firmware/形式 | RG03配置、LA lower16、anonymous FTPは観測に基づく互換実装。Firmware更新で変わる可能性 |
+| Firmware/形式 | RG03配置、LA lower16、anonymous FTPは観測に基づく互換実装。Firmware更新で変わる可能性。beta.9では遅延公開・成長中BINに対応する動的待機を追加 |
 | チャンネル | BINに実際に記録されたCH/LAのみ復元。未記録D0–D15は後から作れない |
 | 時間軸 | Rawが既定。参考+2.091228967 ppmは1台由来の相対補正で全個体共通・トレーサブル校正ではない。固定遅延等は残る |
 | 取得状態 | SINGLEを実行しSTOPへ移行。取得後本体はSTOPに残る。中止・失敗時は本体状態を確認 |
@@ -20,3 +20,8 @@
 ## English
 
 Online acquisition is guarded for MHO984. RG03/LA/FTP behavior is empirical and firmware-dependent. Only recorded channels can be recovered. Raw timing is the default; the bundled relative correction is unit-specific and non-traceable. Acquisition leaves the scope stopped; files can accumulate and interrupted datasets can remain. Maximum capture size, RAM requirements and runtime limits are unmeasured. Dependencies are range-based. CAN FD is absent; protocol OK is not certification. Dense overlays limit rendered events, not the stored list. Main updates do not automatically change published assets.
+
+
+## 大容量Memory BIN
+
+beta.9はFTP SIZEが成長中の間、容量と観測速度に応じて待機を延長しますが、無限待機防止のhard upper boundは600秒です。500 Mpts storage depth option搭載の貸出デモMHO984で成功報告がありますが、全メモリ長・全Firmware・全LAN速度の上限を保証するものではありません。
