@@ -1,4 +1,4 @@
-# Public Release Audit — v0.1.0-beta.7
+# Public Release Audit — v0.1.0-beta.9
 
 This file records the technical/publication checks performed when preparing this Beta package. It is not a legal opinion.
 
@@ -97,3 +97,27 @@ For commercial distribution or organization-level legal approval, obtain appropr
 ## beta.7 trigger-timeout safety
 
 Integrated-GUI acquisition may show a local decision dialog after the configured SINGLE wait interval. Force Trigger is never automatic in the public GUI: the user must explicitly choose it for that acquisition. CLI/headless behavior remains abort-on-timeout unless `--force-trigger-on-timeout` is explicitly supplied.
+
+## beta.9 capacity-aware FTP wait audit
+
+- Fixed 60 s stable-SIZE timeout removed from the normal FTP path: PASS.
+- Initial wait budget scales with RG03 header-declared size and is capped at 600 s: PASS.
+- Observed SIZE growth rate can extend the soft deadline: PASS.
+- Header size remains diagnostic/timing-only and is not a completion target: PASS.
+- Six consecutive stable non-zero SIZE polls remain mandatory: PASS.
+- Exact downloaded-size validation and RG03 decoder validation remain mandatory: PASS.
+- Synthetic 1.5 GB / ~16 MiB/s growth regression exceeds 60 s and completes successfully: PASS.
+- Synthetic header/final-size mismatch regression completes from stable FTP SIZE rather than header equality: PASS.
+- beta.9 hardware validation on the RIGOL loaner/demo MHO984 with 500 Mpts storage option: PASS (tester-reported successful acquisition, 2026-10-04).
+
+## beta.8 firmware-save / FTP compatibility audit
+
+- Scope-side Memory BIN filename shortened to `mho984_YYYYMMDD_HHMMSS.bin`: PASS (26 characters including `.bin`).
+- Capture code refuses future generated instrument filenames longer than 26 characters: PASS.
+- `:SAVE:STATus?` wait extended to 180 s with 1 s polling: PASS.
+- A save-status timeout with no SCPI error is recorded as `pending_ftp_verification`, never as confirmed success: PASS.
+- Integrated controller opts into deferred downstream verification; standalone capture remains conservative by default: PASS.
+- Anonymous FTP waits for the expected file to appear for up to 180 s instead of failing after one directory listing: PASS.
+- Stable remote SIZE and exact downloaded size validation remain required: PASS.
+- RG03 decoder validation remains required before the integrated workflow reports completion: PASS.
+- beta.8 hardware validation: PARTIAL PASS — file-appearance wait worked; fixed 60 s SIZE wait was insufficient for a 1.5 GB-class demo-unit capture.
