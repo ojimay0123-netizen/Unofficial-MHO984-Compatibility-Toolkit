@@ -1,54 +1,168 @@
-# Release Notes — v0.1.0-beta.9
+# MHO984 Compatibility Toolkit v0.1.0-beta.9
 
+This release improves compatibility with newer MHO984 firmware behavior and large/deep-memory waveform captures.
 
-## beta.9 — Capacity-aware dynamic FTP SIZE wait
+> This project is independent and unofficial. It is not affiliated with, endorsed by, or sponsored by RIGOL Technologies.
 
-- Replaced the fixed 60-second remote-SIZE wait with a capacity-aware dynamic wait.
-- The RG03 header-declared size is used only to calculate an initial observation budget; it is never used as a completion criterion.
-- The observed FTP SIZE growth rate is tracked with an exponential moving average and can extend the soft deadline when a large file is still growing.
-- The hard upper bound is 600 seconds to prevent an infinite wait.
-- Completion still requires a non-zero FTP SIZE to remain unchanged for six consecutive polls, followed by exact local/remote size equality and RG03 decoder validation.
-- This change is based on a real RIGOL demo MHO984 capture where a 1,500,000,484-byte RG03 file was still growing at about 980 MB after 60 seconds.
-- **Hardware validation: PASS (2026-10-04)** on a RIGOL loaner/demo MHO984 equipped with the 500 Mpts storage depth option; the tester reported successful acquisition with beta.9.
+## Highlights
 
-## beta.8 — Firmware save / FTP appearance compatibility
+### Capacity-aware dynamic FTP wait
 
-- Changed scope-side BIN filename to `mho984_YYYYMMDD_HHMMSS.bin` (26 chars including `.bin`) for current MHO900 filename-length compatibility.
-- Extended/relaxed `:SAVE:STATus?` polling.
-- Integrated controller can defer an inconclusive save-status result (with no SCPI error) to downstream FTP/RG03 verification.
-- Added FTP file-appearance polling for up to 180 seconds before stable-SIZE checks.
-- Preserved exact-size transfer validation and RG03 decoder validation; no uncertain file is treated as a successful capture.
-- beta.8 hardware validation was a partial pass: delayed file appearance was handled, but the fixed 60-second SIZE wait was insufficient for a 1.5 GB-class demo-unit capture.
+Large Memory BIN files may become visible through FTP while they are still being written by the oscilloscope.
 
-## beta.7 — Interactive SINGLE timeout handling
+Previous releases used a fixed 60-second stable-size timeout. This could fail on deep-memory captures even though the file was still growing normally.
 
-- Integrated GUI acquisitions now show a timeout decision dialog instead of immediately failing.
-- Yes = one-time `:TFORce`, No = wait one more configured interval, Cancel = abort.
-- CLI/headless mode remains fail-safe and aborts unless `--force-trigger-on-timeout` is explicitly supplied.
-- SINGLE timeout interval is configurable from the main Settings dialog (default 30 s).
-- Trigger-timeout decisions and extensions are recorded in `acquisition_log.json`.
+beta.9 now:
 
-## beta.6 — Viewer GUI / mouse interaction update
+- waits for the expected Memory BIN to appear in the FTP namespace;
+- monitors the remote FTP SIZE while the file is growing;
+- estimates the required wait budget from the RG03 header size;
+- tracks the observed FTP growth rate with an exponential moving average;
+- dynamically extends the soft deadline when the file is still growing;
+- uses a 600-second hard upper limit to prevent infinite waiting;
+- requires six consecutive stable SIZE checks before downloading;
+- verifies that the downloaded local file size exactly matches the stable remote FTP size;
+- performs RG03 validation before accepting the acquisition.
 
-- Reordered the Viewer detail tabs around the normal workflow: Waveform/Display, Cursor, Auto Measure, Protocol, Sync, Data, Diagnostics.
-- Added pixel-based hover hit testing for A-Z measurement cursor lines.
-- The native mouse pointer changes to a horizontal resize pointer near a cursor line.
-- Left-dragging a cursor line moves that selected cursor directly and updates measurements in real time.
-- Right-dragging on the waveform pans the common time axis and shows a pan pointer while dragging.
-- Existing keyboard cursor controls and protocol overlay behavior are preserved.
+The RG03 header-declared total size is used only as a timing hint. It is not used as the final completion criterion.
 
+### Firmware save compatibility
 
-## Viewer protocol overlay
+Firmware updates can change the timing between:
 
-- Protocol Analyzer decode results can now be written to `protocol_overlays/active_protocol_overlay.json` inside the dataset.
-- Viewer automatically detects changes to that file and overlays decoded frames/events directly on the original Analog/Digital waveform display.
-- Event types use distinct colored translucent bands; decode errors are shown in red.
-- Labels are shown adaptively according to the current zoom level, with Auto / More / Fewer / None modes.
-- Overlay opacity is adjustable.
-- Viewer offers direct launch of Protocol Analyzer, reload, and clear controls from the new `プロトコル帯` tab.
-- Protocol Analyzer has `デコード後、Viewerへプロトコル帯を自動反映` enabled by default.
-- Overlay rendering is limited to visible events and capped per refresh to preserve pan/zoom responsiveness on dense captures.
+`SAVE command -> SAVE status -> FTP file appearance -> file write completion`
 
-## Compatibility / safety
+beta.9 includes the compatibility work introduced during beta.8 development:
 
-Acquisition, RG03 decoding, Raw timebase defaults, legal notices, and protocol-decoder limitations remain unchanged from beta.4. Protocol annotations are best-effort analysis aids and are not protocol-conformance certification.
+- scope-side Memory BIN names are now limited to 26 characters;
+- generated names use the form:
+
+  `mho984_YYYYMMDD_HHMMSS.bin`
+
+- numeric filename variants appended by the oscilloscope are accepted automatically;
+- `:SAVE:STATus?` polling has been extended;
+- an inconclusive SAVE status with no SCPI error can be deferred to downstream FTP/RG03 verification in the integrated GUI workflow;
+- FTP file appearance is polled instead of failing after a single directory lookup;
+- uncertain or incomplete files are never accepted as successful acquisitions.
+
+## Hardware validation
+
+Successful beta.9 acquisition was reported on 2026-10-04 using a RIGOL loaner/demo MHO984 equipped with the:
+
+**500 Mpts storage depth option**
+
+Testing included the firmware-update behavior that originally caused the Toolkit to fail during large Memory BIN retrieval.
+
+During beta.8 testing, a Memory BIN with an RG03 declared size of approximately 1.5 GB was still only about 980 MB after roughly 60 seconds, confirming that the previous fixed timeout was insufficient.
+
+beta.9's dynamic waiting mechanism successfully handled this condition.
+
+## Viewer and protocol analysis
+
+Existing Viewer and analysis functionality from beta.7 is preserved, including:
+
+- Analog CH1-CH4 display
+- Digital D0-D15 display when LA data are present
+- offline Memory BIN decoding
+- mouse-wheel X-axis zoom
+- right-drag time-axis panning
+- direct mouse dragging of A-Z measurement cursors
+- automatic measurements
+- Raw / relative-aligned digital timebase display
+- protocol overlays on the original Viewer waveform
+
+Supported protocol decoding includes:
+
+- UART
+- RS-232
+- RS-485
+- I2C
+- SPI
+- LIN
+- Classic CAN
+- GPS NMEA
+- GPS UBX
+- GPS PPS timing analysis
+
+CAN FD is not currently implemented.
+
+## Documentation and GitHub improvements
+
+Since beta.7, the repository also gained:
+
+- Viewer screenshot in the Japanese and English README
+- installation guide
+- troubleshooting guide
+- hardware-validation guide
+- known-limitations documentation
+- updated protocol-decoding documentation
+- public release audit
+- expanded public test report
+- GitHub bug-report template
+- GitHub feature-request template
+- privacy reminder for diagnostic logs and datasets
+
+## Safety behavior retained
+
+The public-release safety policy remains unchanged:
+
+- only MHO984 is accepted by the online acquisition model guard;
+- Force Trigger is not automatic;
+- CLI/headless mode remains fail-safe;
+- broad LAN fallback discovery remains disabled by default;
+- anonymous FTP is used only on the configured instrument;
+- the Toolkit does not automatically delete Memory BIN files from the oscilloscope;
+- Viewer digital timebase correction remains optional and Raw is the default.
+
+## Validation
+
+The beta.9 public test report records PASS results for:
+
+- Python syntax compilation
+- protocol decoder self-tests
+- protocol overlay self-tests
+- firmware-save compatibility self-test
+- 26-character scope filename handling
+- delayed FTP file appearance
+- synthetic 1.5 GB-class dynamic growth beyond 60 seconds
+- header-size / final-size mismatch handling
+- dynamic soft-deadline extension
+- 600-second absolute wait limit
+- deferred SAVE-status handling
+
+In addition, beta.9 was successfully exercised on the RIGOL loaner/demo MHO984 described above.
+
+## Important notes
+
+- Primarily validated with the RIGOL MHO984.
+- MHO934 and MHO954 remain unvalidated.
+- RG03 internal format handling and anonymous FTP behavior are interoperability mechanisms derived from observed instrument behavior and may change with future firmware.
+- Logic Analyzer / POD must be enabled on the oscilloscope if D0-D15 data are required.
+- Digital timebase correction is experimental and instrument-dependent.
+- This software is not intended for safety-critical or traceable calibration use.
+
+## Upgrade from beta.7
+
+A fresh extraction of the beta.9 ZIP is recommended rather than overwriting an existing beta.7 folder.
+
+Run:
+
+`setup_venv.bat`
+
+if the local virtual environment has not already been prepared, then start the Toolkit with:
+
+`START_MHO984_Toolkit.bat`
+
+## Integrity
+
+Release package:
+
+`Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.9.zip`
+
+SHA-256:
+
+`9e14e2e38b6d9bf288f1a6531b7c6eab5d026c24a9bbfd4202246200e5ba0f34`
+
+## Full Changelog
+
+https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/compare/v0.1.0-beta.7...v0.1.0-beta.9
