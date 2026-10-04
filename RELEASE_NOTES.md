@@ -1,5 +1,24 @@
-# Release Notes — v0.1.0-beta.7
+# Release Notes — v0.1.0-beta.9
 
+
+## beta.9 — Capacity-aware dynamic FTP SIZE wait
+
+- Replaced the fixed 60-second remote-SIZE wait with a capacity-aware dynamic wait.
+- The RG03 header-declared size is used only to calculate an initial observation budget; it is never used as a completion criterion.
+- The observed FTP SIZE growth rate is tracked with an exponential moving average and can extend the soft deadline when a large file is still growing.
+- The hard upper bound is 600 seconds to prevent an infinite wait.
+- Completion still requires a non-zero FTP SIZE to remain unchanged for six consecutive polls, followed by exact local/remote size equality and RG03 decoder validation.
+- This change is based on a real RIGOL demo MHO984 capture where a 1,500,000,484-byte RG03 file was still growing at about 980 MB after 60 seconds.
+- **Hardware validation: PASS (2026-10-04)** on a RIGOL loaner/demo MHO984 equipped with the 500 Mpts storage depth option; the tester reported successful acquisition with beta.9.
+
+## beta.8 — Firmware save / FTP appearance compatibility
+
+- Changed scope-side BIN filename to `mho984_YYYYMMDD_HHMMSS.bin` (26 chars including `.bin`) for current MHO900 filename-length compatibility.
+- Extended/relaxed `:SAVE:STATus?` polling.
+- Integrated controller can defer an inconclusive save-status result (with no SCPI error) to downstream FTP/RG03 verification.
+- Added FTP file-appearance polling for up to 180 seconds before stable-SIZE checks.
+- Preserved exact-size transfer validation and RG03 decoder validation; no uncertain file is treated as a successful capture.
+- beta.8 hardware validation was a partial pass: delayed file appearance was handled, but the fixed 60-second SIZE wait was insufficient for a 1.5 GB-class demo-unit capture.
 
 ## beta.7 — Interactive SINGLE timeout handling
 
