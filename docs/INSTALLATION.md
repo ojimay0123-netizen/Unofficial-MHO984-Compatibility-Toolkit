@@ -6,7 +6,7 @@ Windows向けPythonソース配布です。Python runtimeは同梱しません�
 
 ## 導入
 
-1. [beta.7 Release](https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/releases/tag/v0.1.0-beta.7)から `Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.7.zip` と対応する `.zip.sha256` を取得します。GitHub自動生成のSource code ZIPと配布ZIPは区別してください。
+1. [beta.9 Release](https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/releases/tag/v0.1.0-beta.9)から `Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.9.zip` と対応する `.zip.sha256` を取得します。GitHub自動生成のSource code ZIPと配布ZIPは区別してください。
 2. PowerShellで下記を実行し、結果をダウンロードしたsha256ファイルの値と比較します。不一致なら使用せず再取得してください。
 3. ZIPを、書き込み可能なローカルフォルダへ完全に展開します。ZIP内から直接BATを起動しないでください。
 4. python.orgのPython 3を用意します。Python launcherとTcl/Tkを含む構成を使用し、下記のTk確認で小窓が表示されることを確認します。
@@ -16,7 +16,7 @@ Windows向けPythonソース配布です。Python runtimeは同梱しません�
 8. オフラインBINを開くか、下記LAN準備を済ませて取得します。初回の合否確認は [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md) を使用してください。
 
 ```powershell
-Get-FileHash .\Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.7.zip -Algorithm SHA256
+Get-FileHash .\Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.9.zip -Algorithm SHA256
 py -3 --version
 py -3 -m tkinter
 ```
