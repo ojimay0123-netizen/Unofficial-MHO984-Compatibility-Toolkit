@@ -22,7 +22,7 @@ GitHub等で公開する前の最終確認用です。
 
 ## 推奨Release tag
 
-`v0.1.0-beta.7`
+`v0.1.0-beta.9`
 
 ## beta.2 acquisition compatibility
 
