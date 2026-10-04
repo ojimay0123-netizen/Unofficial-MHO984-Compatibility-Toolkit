@@ -1,4 +1,4 @@
-# MHO984 Toolkit v0.1.0-beta.7 (Unofficial)
+# MHO984 Toolkit v0.1.0-beta.9 (Unofficial)
 
 Windows向けの、RIGOL MHO984との互換性を目的とした**独立・非公式**の波形取得／解析ツールです。
 取得エンジン r12.11e と Viewer r13.5 を、通常利用では1つのメイン画面から操作できるよう整理したBeta版です。
@@ -25,12 +25,12 @@ Windows向けの、RIGOL MHO984との互換性を目的とした**独立・非�
 ## 初回導入と確認
 
 1. [インストール・初回実行](docs/INSTALLATION.md)に従い、配布ZIPのチェックサム確認、Python準備、setup_venv.bat、起動、IP設定を行います。
-2. [実機確認手順](docs/HARDWARE_VALIDATION.md)でAnalog・D0–D15・同期・beta.7タイムアウトを確認します。
+2. [実機確認手順](docs/HARDWARE_VALIDATION.md)でAnalog・D0–D15・同期・SINGLEタイムアウト・beta.9大容量Memory BIN取得を確認します。
 3. 問題があれば[障害切り分け](docs/TROUBLESHOOTING.md)を参照してください。
 
 [既知の制限](docs/KNOWN_LIMITATIONS.md)には検証範囲と未評価項目を集約しています。SCPI既定ポートはTCP 5555、FTP制御はTCP 21です。Python/Tkinterと依存導入が必要で、正確な検証済みWindows/Python構成は追加確認中です。
 
-mainの文書更新は公開済みbeta.7タグ・Release ZIPに自動反映されません。
+mainの文書更新は公開済みタグ・Release ZIPに自動反映されません。
 
 ## 起動方法
 
@@ -102,6 +102,12 @@ CAN FDは本版では未対応です。プロトコル解析は適合性認証�
 - Digital時間軸のRaw / 相対時間軸補正表示
 - UART / RS-232 / RS-485 / I2C / SPI / LIN / CAN Classic / GPS NMEA・UBX・PPS解析
 
+## Firmware更新・大容量メモリ対応（beta.9）
+
+Firmware更新後、一部実機では `:SAVE:STATus?` の完了通知とFTP上のMemory BIN生成タイミングが一致せず、大容量RG03 BINがFTP上で長時間成長し続けることがあります。beta.9では固定60秒待機を廃止し、RG03ヘッダの規模と実測FTP SIZE成長速度から待機予算を動的に調整します。完了判定自体はヘッダ宣言サイズではなく、FTP SIZEの連続安定、ローカル/リモートサイズ一致、RG03デコーダ検証で行います。
+
+2026-10-04に、**500 Mpts storage depth optionを搭載したRIGOL貸出デモMHO984** でbeta.9の実機取得成功が報告されました。オプション有無やFirmware差による挙動差は今後もIssueで収集します。
+
 ## SINGLE直後のSweep readback
 
 一部の実機では `:SINGle` 直後に `:TRIGger:SWEep?` を問い合わせると `AUTO` が返ることがあります。本版では、この即時readbackを診断情報として保存しますが、それだけを理由に取得失敗とは判定しません。SINGLEコマンドのSCPI受理、トリガ状態監視、最終STOP確認で取得完了を判定します。
@@ -135,7 +141,7 @@ Viewerの初期値は **Raw** です。
 
 ## Release status
 
-`v0.1.0-beta.7` は **MHO984 validated / community testing beta** です。beta.4では取得済みAnalog/Digital波形に対するプロトコル解析機能を追加しました。
+`v0.1.0-beta.9` は **MHO984 validated / community testing beta** です。Firmware更新後の遅延FTP公開と大容量Memory BINに対する容量依存の動的待機を追加し、500 Mpts storage depth option搭載のRIGOL貸出デモMHO984で実機取得成功が報告されています。
 
 
 ## beta.5: Viewerプロトコル帯
@@ -149,6 +155,15 @@ Protocol Analyzerでデコードした結果を、元のViewer波形へ直接重
 - 波形上の右ドラッグは時間軸パンです。ドラッグ中はパン用ポインタへ変わります。
 - ホイールXズーム、Shift+ホイールパン、A～Zキー選択、←→サンプル移動など従来操作も維持しています。
 
+
+### beta.9: 大容量Memory BINの容量依存動的待機
+
+- FTP上にMemory BINが出現しても、ファイルが成長中なら固定60秒で失敗せず待機を継続します。
+- RG03ヘッダの宣言サイズは初期待機予算の目安にのみ使い、完了条件にはしません。
+- 実測FTP SIZEの成長速度をEMAで追跡し、必要に応じてsoft deadlineを延長します。
+- hard upper boundは600秒です。
+- 最終受理には、6回連続の安定SIZE、ローカル/リモートサイズ一致、RG03デコーダ検証が必要です。
+- RIGOL貸出デモMHO984（500 Mpts storage depth option）で実機取得成功が報告されています。
 
 ### beta.7: SINGLE取得タイムアウト処理
 
