@@ -2,7 +2,7 @@
 
 The protocol analyzer works only on already captured waveforms. It does not send any protocol traffic and does not change oscilloscope configuration.
 
-## Supported in v0.1.0-beta.7
+## Supported in v0.1.0-beta.9
 
 - UART: 5-9 data bits, None/Even/Odd parity, 1/1.5/2 stop bits
 - RS-232: UART decoder with polarity inversion support
