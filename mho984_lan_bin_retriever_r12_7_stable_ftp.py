@@ -8,12 +8,25 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-VERSION="2026.08.29-r12.7-public-beta2-ftp-only-default"
+VERSION="2026.10.04-r12.7-public-beta4-dynamic-size-wait"
 ALLOW_FALLBACK_DISCOVERY=False
 RG03_MAGIC=b"RG03"
 HTTP_TIMEOUT_S=3.0
 TCP_TIMEOUT_S=1.5
 FTP_TIMEOUT_S=15.0
+FTP_FILE_APPEAR_TIMEOUT_S=180.0
+FTP_FILE_APPEAR_POLL_S=1.0
+# Dynamic remote-file completion policy. The current firmware can expose a
+# large RG03 file through FTP while it is still growing. A fixed 60-second
+# stable-SIZE deadline is therefore unsafe for deep-memory captures.
+FTP_SIZE_POLL_S=0.50
+FTP_SIZE_STABLE_REQUIRED=6
+FTP_SIZE_INITIAL_MIN_WAIT_S=60.0
+FTP_SIZE_UNKNOWN_HEADER_WAIT_S=120.0
+FTP_SIZE_ABSOLUTE_MAX_WAIT_S=600.0
+FTP_SIZE_FORECAST_MIN_RATE_BPS=8*1024*1024
+FTP_SIZE_FORECAST_SAFETY=1.75
+FTP_SIZE_FORECAST_MARGIN_S=20.0
 DOWNLOAD_CHUNK=4*1024*1024
 HTTP_FILE_ROOTS=["/","/C:/","/C/","/data/UserData/","/storage/","/storage/user/","/userdata/"]
 WEBDAV_ROOTS=["/","/C:/","/data/UserData/","/storage/"]
@@ -233,6 +246,95 @@ def _ftp_find_matching_file(ftp,expected_name):
     return None,None,None,attempts
 
 
+def _select_match_from_names(names, expected_name):
+    rx=variant_regex(expected_name)
+    matches=[]
+    for remote in names:
+        name=Path(str(remote).rstrip("/")).name
+        if rx.fullmatch(name):
+            matches.append((remote,name))
+    if not matches:
+        return None
+    exact=[
+        item for item in matches
+        if item[1].lower()==Path(expected_name).name.lower()
+    ]
+    if exact:
+        return exact[0]
+    matches.sort(key=lambda item:(len(item[1]),item[1].lower()))
+    return matches[0]
+
+
+def _wait_ftp_matching_file(
+    host,
+    expected_name,
+    timeout_s=FTP_FILE_APPEAR_TIMEOUT_S,
+    poll_s=FTP_FILE_APPEAR_POLL_S,
+):
+    """Wait until the saved BIN becomes visible in the FTP namespace."""
+    started=time.perf_counter()
+    history=[]
+    viable_roots=None
+    initial_attempts=[]
+    ftp=None
+    welcome=None
+    reconnects=0
+    try:
+        while time.perf_counter()-started<timeout_s:
+            if ftp is None:
+                try:
+                    ftp,welcome=_ftp_open_anonymous(host)
+                    reconnects+=1
+                except Exception as e:
+                    history.append({"elapsed_s":round(time.perf_counter()-started,3),"event":"ftp_connect_failed","error":f"{type(e).__name__}: {e}"})
+                    time.sleep(poll_s)
+                    continue
+            roots_to_check=FTP_ROOTS if viable_roots is None else viable_roots
+            cycle_viable=[]
+            cycle_counts={}
+            matched=None
+            try:
+                for root in roots_to_check:
+                    try:
+                        ftp.cwd("/")
+                        if root!="/":
+                            ftp.cwd(root)
+                        names=ftp.nlst()
+                        cycle_viable.append(root)
+                        cycle_counts[root]=len(names)
+                    except Exception as e:
+                        if viable_roots is None:
+                            initial_attempts.append({"root":root,"error":f"{type(e).__name__}: {e}"})
+                        continue
+                    selected=_select_match_from_names(names,expected_name)
+                    if selected is not None:
+                        remote,name=selected
+                        matched=(root,remote,name)
+                        break
+                if viable_roots is None:
+                    viable_roots=cycle_viable or ["/"]
+                elapsed=time.perf_counter()-started
+                history.append({"elapsed_s":round(elapsed,3),"event":"directory_poll","roots_checked":list(roots_to_check),"entry_counts":cycle_counts,"found":bool(matched)})
+                if matched is not None:
+                    root,remote,name=matched
+                    return {"found":True,"root":root,"remote":remote,"name":name,"elapsed_s":elapsed,"poll_count":sum(1 for h in history if h.get("event")=="directory_poll"),"reconnects":reconnects,"welcome":welcome,"initial_attempts":initial_attempts,"history":history}
+            except Exception as e:
+                history.append({"elapsed_s":round(time.perf_counter()-started,3),"event":"ftp_session_error","error":f"{type(e).__name__}: {e}"})
+                try: ftp.close()
+                except Exception: pass
+                ftp=None
+                viable_roots=None
+            time.sleep(poll_s)
+        return {"found":False,"reason":"timeout_waiting_for_file_to_appear","elapsed_s":time.perf_counter()-started,"poll_count":sum(1 for h in history if h.get("event")=="directory_poll"),"reconnects":reconnects,"initial_attempts":initial_attempts,"history":history}
+    finally:
+        try:
+            if ftp is not None: ftp.quit()
+        except Exception:
+            try:
+                if ftp is not None: ftp.close()
+            except Exception: pass
+
+
 def _parse_rg03_file_header(header16):
     if len(header16)<16:
         return {
@@ -326,118 +428,94 @@ def _ftp_query_size(ftp,remote):
         return None
 
 
-def _wait_remote_rg03_complete(
-    host,
-    root,
-    remote,
-    timeout_s=60.0,
-    poll_s=0.50,
-    stable_required=6,
-):
+def _initial_dynamic_size_wait_budget(header_info):
+    """Return a capacity-aware initial wait budget in seconds.
+
+    The RG03 header size is used only to choose how long we are willing to
+    observe a growing file. It is deliberately NOT used as the completion
+    target because validated MHO984 captures have shown that the header total
+    and final FTP SIZE can differ.
     """
-    R12.2 completion policy.
+    if isinstance(header_info,dict) and header_info.get("valid"):
+        total=int(header_info.get("total_file_bytes") or 0)
+        if total>0:
+            estimate=(total/float(FTP_SIZE_FORECAST_MIN_RATE_BPS)*FTP_SIZE_FORECAST_SAFETY+FTP_SIZE_FORECAST_MARGIN_S)
+            return min(FTP_SIZE_ABSOLUTE_MAX_WAIT_S,max(FTP_SIZE_INITIAL_MIN_WAIT_S,estimate))
+    return min(FTP_SIZE_ABSOLUTE_MAX_WAIT_S,max(FTP_SIZE_INITIAL_MIN_WAIT_S,FTP_SIZE_UNKNOWN_HEADER_WAIT_S))
 
-    Real MHO984 evidence showed FTP SIZE remained exactly 250,000,484 bytes for
-    180 seconds while the RG03 file header declared 300,000,484 bytes.
 
-    Therefore the file-level total_file_bytes field is NOT used as an FTP
-    completion target. It is retained only as a diagnostic field.
-
-    Completion means:
-      - FTP SIZE is available
-      - the same nonzero SIZE is observed stable_required consecutive times
-
-    The full RETR is then accepted only when the local byte count exactly
-    equals this stable remote byte count. The decoder subsequently verifies
-    the complete RG03 record structure to EOF.
-    """
+def _wait_remote_rg03_complete(host,root,remote,poll_s=FTP_SIZE_POLL_S,stable_required=FTP_SIZE_STABLE_REQUIRED,absolute_max_wait_s=FTP_SIZE_ABSOLUTE_MAX_WAIT_S):
+    """Wait for a remotely growing RG03 file to become stable."""
     started=time.perf_counter()
+    hard_deadline=started+float(absolute_max_wait_s)
     history=[]
-
-    header_info=None
-    try:
-        header_info=_ftp_read_first16(host,root,remote)
-    except Exception:
-        header_info=None
-
+    try: header_info=_ftp_read_first16(host,root,remote)
+    except Exception: header_info=None
+    initial_budget=_initial_dynamic_size_wait_budget(header_info)
+    soft_deadline=min(hard_deadline,started+initial_budget)
     ftp=None
     last_size=None
     stable_count=0
-
+    last_growth_time=None
+    last_growth_size=None
+    growth_rate_ema=None
+    max_soft_deadline=soft_deadline
     try:
         ftp,_=_ftp_open_anonymous(host)
         ftp.cwd("/")
-        if root!="/":
-            ftp.cwd(root)
-
-        while time.perf_counter()-started<timeout_s:
+        if root!="/": ftp.cwd(root)
+        while True:
+            now=time.perf_counter()
+            elapsed=now-started
             size=_ftp_query_size(ftp,remote)
-
+            grew=False
+            instantaneous_rate=None
             if size is None:
-                history.append({
-                    "elapsed_s":round(time.perf_counter()-started,3),
-                    "remote_size":None,
-                    "stable_count":0,
-                })
-                time.sleep(poll_s)
-                continue
-
-            if size>0 and size==last_size:
-                stable_count+=1
+                stable_count=0
             else:
-                stable_count=1 if size>0 else 0
-
-            history.append({
-                "elapsed_s":round(time.perf_counter()-started,3),
-                "remote_size":size,
-                "stable_count":stable_count,
-                "header_declared_total":(
-                    header_info.get("total_file_bytes")
-                    if isinstance(header_info,dict)
-                    else None
-                ),
-            })
-
-            if size>0 and stable_count>=stable_required:
-                return {
-                    "complete":True,
-                    "method":"FTP_SIZE_stable",
-                    "remote_size":int(size),
-                    "stable_count":stable_count,
-                    "header":header_info,
-                    "header_size_matches_remote":(
-                        bool(
-                            isinstance(header_info,dict)
-                            and header_info.get("valid")
-                            and header_info.get("total_file_bytes")==int(size)
-                        )
-                    ),
-                    "history":history,
-                    "elapsed_s":time.perf_counter()-started,
-                }
-
+                if size>0 and size==last_size: stable_count+=1
+                else: stable_count=1 if size>0 else 0
+                if last_size is not None and size>last_size:
+                    grew=True
+                    if last_growth_time is not None and last_growth_size is not None:
+                        dt=max(now-last_growth_time,1e-9)
+                        db=size-last_growth_size
+                        instantaneous_rate=db/dt
+                        if instantaneous_rate>0:
+                            if growth_rate_ema is None: growth_rate_ema=instantaneous_rate
+                            else: growth_rate_ema=(0.25*instantaneous_rate)+(0.75*growth_rate_ema)
+                    last_growth_time=now
+                    last_growth_size=size
+                declared=(int(header_info.get("total_file_bytes")) if isinstance(header_info,dict) and header_info.get("valid") and header_info.get("total_file_bytes") is not None else None)
+                if size is not None and size>0 and declared is not None and declared>size and growth_rate_ema is not None and growth_rate_ema>0:
+                    remaining=declared-size
+                    forecast_remaining=remaining/growth_rate_ema
+                    candidate=now+forecast_remaining*FTP_SIZE_FORECAST_SAFETY+FTP_SIZE_FORECAST_MARGIN_S
+                    soft_deadline=min(hard_deadline,max(soft_deadline,candidate))
+                    max_soft_deadline=max(max_soft_deadline,soft_deadline)
+            declared_for_log=header_info.get("total_file_bytes") if isinstance(header_info,dict) else None
+            history.append({"elapsed_s":round(elapsed,3),"remote_size":size,"stable_count":stable_count,"grew":grew,"instantaneous_rate_Bps":None if instantaneous_rate is None else round(instantaneous_rate,3),"growth_rate_ema_Bps":None if growth_rate_ema is None else round(growth_rate_ema,3),"header_declared_total":declared_for_log,"soft_deadline_elapsed_s":round(soft_deadline-started,3),"hard_deadline_elapsed_s":round(hard_deadline-started,3)})
+            if size is not None and size>0 and stable_count>=stable_required:
+                return {"complete":True,"method":"FTP_SIZE_dynamic_stable","remote_size":int(size),"stable_count":stable_count,"header":header_info,"header_size_matches_remote":bool(isinstance(header_info,dict) and header_info.get("valid") and header_info.get("total_file_bytes")==int(size)),"initial_wait_budget_s":initial_budget,"final_soft_deadline_s":max_soft_deadline-started,"absolute_max_wait_s":float(absolute_max_wait_s),"observed_growth_rate_Bps":growth_rate_ema,"history":history,"elapsed_s":time.perf_counter()-started}
+            now=time.perf_counter()
+            if now>=hard_deadline:
+                return {"complete":False,"reason":"absolute_timeout_waiting_for_stable_FTP_SIZE","remote_size":last_size,"header":header_info,"initial_wait_budget_s":initial_budget,"final_soft_deadline_s":max_soft_deadline-started,"absolute_max_wait_s":float(absolute_max_wait_s),"observed_growth_rate_Bps":growth_rate_ema,"history":history,"elapsed_s":now-started}
+            if now>=soft_deadline:
+                recent_growth=last_growth_time is not None and (now-last_growth_time)<=max(5.0,poll_s*stable_required*2)
+                if recent_growth:
+                    soft_deadline=min(hard_deadline,now+max(30.0,poll_s*stable_required*4))
+                    max_soft_deadline=max(max_soft_deadline,soft_deadline)
+                else:
+                    return {"complete":False,"reason":"dynamic_timeout_waiting_for_stable_FTP_SIZE","remote_size":last_size,"header":header_info,"initial_wait_budget_s":initial_budget,"final_soft_deadline_s":max_soft_deadline-started,"absolute_max_wait_s":float(absolute_max_wait_s),"observed_growth_rate_Bps":growth_rate_ema,"history":history,"elapsed_s":now-started}
             last_size=size
             time.sleep(poll_s)
-
-        return {
-            "complete":False,
-            "reason":"timeout_waiting_for_stable_FTP_SIZE",
-            "remote_size":last_size,
-            "header":header_info,
-            "history":history,
-            "elapsed_s":time.perf_counter()-started,
-        }
-
     finally:
         try:
-            if ftp is not None:
-                ftp.quit()
+            if ftp is not None: ftp.quit()
         except Exception:
             try:
-                if ftp is not None:
-                    ftp.close()
-            except Exception:
-                pass
+                if ftp is not None: ftp.close()
+            except Exception: pass
 
 def _validate_downloaded_rg03(path, expected_remote_size=None):
     """
@@ -570,119 +648,30 @@ def _download_one_ftp(host,root,remote,dst,expected_remote_size=None):
 
 def ftp_retrieve(host,expected_name,destination_dir,ports):
     if not ports.get("21",{}).get("open"):
-        return {
-            "success":False,
-            "method":"anonymous_ftp",
-            "skipped":"port_closed",
-        }
+        return {"success":False,"method":"anonymous_ftp","skipped":"port_closed"}
 
-    # First locate the actual Rigol filename variant.
-    ftp=None
-    attempts=[]
-
-    try:
-        ftp,welcome=_ftp_open_anonymous(host)
-        root,remote,name,attempts=_ftp_find_matching_file(
-            ftp,
-            expected_name,
-        )
-    except Exception as e:
-        return {
-            "success":False,
-            "method":"anonymous_ftp",
-            "error":f"{type(e).__name__}: {e}",
-        }
-    finally:
-        try:
-            if ftp is not None:
-                ftp.quit()
-        except Exception:
-            try:
-                if ftp is not None:
-                    ftp.close()
-            except Exception:
-                pass
-
-    if not remote:
-        return {
-            "success":False,
-            "method":"anonymous_ftp",
-            "reason":"matching_file_not_found",
-            "attempts":attempts,
-        }
+    appearance=_wait_ftp_matching_file(host,expected_name,timeout_s=FTP_FILE_APPEAR_TIMEOUT_S,poll_s=FTP_FILE_APPEAR_POLL_S)
+    attempts=appearance.get("initial_attempts",[])
+    if not appearance.get("found"):
+        return {"success":False,"method":"anonymous_ftp","reason":"matching_file_not_found_after_wait","appearance_wait":appearance,"attempts":attempts}
+    root=appearance["root"]
+    remote=appearance["remote"]
+    name=appearance["name"]
 
     destination_dir=Path(destination_dir)
     destination_dir.mkdir(parents=True,exist_ok=True)
     dst=destination_dir/name
-
-    # Usually only one pass is needed. Three passes are allowed only as a
-    # defensive fallback if the FTP server does not support SIZE or returns a
-    # transient short transfer.
     transfer_attempts=[]
-
     for transfer_index in range(1,4):
-        readiness=_wait_remote_rg03_complete(
-            host,
-            root,
-            remote,
-            timeout_s=60.0,
-            poll_s=0.50,
-            stable_required=6,
-        )
-
+        readiness=_wait_remote_rg03_complete(host,root,remote,poll_s=FTP_SIZE_POLL_S,stable_required=FTP_SIZE_STABLE_REQUIRED,absolute_max_wait_s=FTP_SIZE_ABSOLUTE_MAX_WAIT_S)
         if not readiness.get("complete"):
-            return {
-                "success":False,
-                "method":"anonymous_ftp",
-                "reason":"remote_file_not_complete",
-                "root":root,
-                "remote":remote,
-                "readiness":readiness,
-                "attempts":attempts,
-                "transfer_attempts":transfer_attempts,
-            }
-
-        download=_download_one_ftp(
-            host,
-            root,
-            remote,
-            dst,
-            expected_remote_size=readiness.get("remote_size"),
-        )
-        transfer_attempts.append({
-            "index":transfer_index,
-            "readiness":readiness,
-            "download":download,
-        })
-
+            return {"success":False,"method":"anonymous_ftp","reason":"remote_file_not_complete","root":root,"remote":remote,"readiness":readiness,"appearance_wait":appearance,"attempts":attempts,"transfer_attempts":transfer_attempts}
+        download=_download_one_ftp(host,root,remote,dst,expected_remote_size=readiness.get("remote_size"))
+        transfer_attempts.append({"index":transfer_index,"readiness":readiness,"download":download})
         if download.get("success"):
-            return {
-                "success":True,
-                "method":"anonymous_ftp",
-                "root":root,
-                "remote":remote,
-                "destination":download["destination"],
-                "size":download["size"],
-                "elapsed_s":download["elapsed_s"],
-                "throughput_MiB_s":download["throughput_MiB_s"],
-                "readiness":readiness,
-                "download_validation":download["validation"],
-                "transfer_attempts":transfer_attempts,
-            }
-
-        # If a short transfer still occurred, do not pass it to Decoder.
-        # Wait briefly and re-check the remote file/header before another RETR.
+            return {"success":True,"method":"anonymous_ftp","root":root,"remote":remote,"destination":download["destination"],"size":download["size"],"elapsed_s":download["elapsed_s"],"throughput_MiB_s":download["throughput_MiB_s"],"appearance_wait":appearance,"readiness":readiness,"download_validation":download["validation"],"transfer_attempts":transfer_attempts}
         time.sleep(1.0)
-
-    return {
-        "success":False,
-        "method":"anonymous_ftp",
-        "reason":"complete_RG03_download_failed_after_retries",
-        "root":root,
-        "remote":remote,
-        "attempts":attempts,
-        "transfer_attempts":transfer_attempts,
-    }
+    return {"success":False,"method":"anonymous_ftp","reason":"complete_RG03_download_failed_after_retries","root":root,"remote":remote,"appearance_wait":appearance,"attempts":attempts,"transfer_attempts":transfer_attempts}
 
 def retrieve_bin(host,expected_name,destination_dir,report_path=None):
     destination_dir=Path(destination_dir)
@@ -692,7 +681,7 @@ def retrieve_bin(host,expected_name,destination_dir,report_path=None):
     report={
         "tool":"MHO984 LAN BIN Retriever",
         "version":VERSION,
-        "strategy":"anonymous_FTP_first_with_stable_FTP_SIZE; RG03 record-structure validation in decoder",
+        "strategy":"anonymous_FTP_file_appearance_wait_then_capacity_aware_dynamic_stable_SIZE; RG03 record-structure validation in decoder",
         "started_at":datetime.now().astimezone().isoformat(timespec="seconds"),
         "host":host,
         "expected_name":expected_name,

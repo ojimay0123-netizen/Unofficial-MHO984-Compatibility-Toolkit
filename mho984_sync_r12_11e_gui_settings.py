@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # Independent, unofficial compatibility tool; not affiliated with RIGOL.
 """
-MHO984 Toolkit Public Beta v0.1.0-beta.7
+MHO984 Toolkit Public Beta v0.1.0-beta.9
 
 Default startup:
   Settings GUI
@@ -31,7 +31,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 
-VERSION = "0.1.0-beta.7 (engine r12.11e / viewer r13.6 + protocol overlay)"
+VERSION = "0.1.0-beta.9 (engine r12.11e / viewer r13.6 + dynamic FTP size wait)"
 
 OSC_IP = ""
 OSC_PORT = 5555
@@ -567,7 +567,7 @@ def main():
     args = ap.parse_args()
 
     console_status("=" * 76)
-    console_status("MHO984 Toolkit Public Beta v0.1.0-beta.7 startup")
+    console_status("MHO984 Toolkit Public Beta v0.1.0-beta.9 startup")
     console_status("=" * 76)
     console_status(f"Python      : {sys.executable}")
     console_status(f"Program dir : {SCRIPT_DIR}")
@@ -681,7 +681,7 @@ def main():
     lan_inbox.mkdir(parents=True, exist_ok=True)
 
     print("=" * 76)
-    print("MHO984 Toolkit Public Beta v0.1.0-beta.7 - Scope/Dual Edge Drift")
+    print("MHO984 Toolkit Public Beta v0.1.0-beta.9 - Scope/Dual Edge Drift")
     print("=" * 76)
     print(f"Scope       : {args.scope_ip}:{args.scope_port}")
     print(f"Dataset dir : {base_dir}")
@@ -775,7 +775,8 @@ def main():
             _interactive_trigger_timeout_decision
         )
     capture.R10_INSTRUMENT_MEMORY_DIRECTORY = "C:/"
-    capture.R10_MEMORY_FILENAME_PREFIX = "mho_sync_r12_"
+    capture.R10_MEMORY_FILENAME_PREFIX = "mho984_"
+    capture.R10_ALLOW_DEFERRED_MEMORY_SAVE_CONFIRMATION = True
 
     print("[1/4] SINGLE -> STOP -> save one RG03 Memory BIN")
     t = time.perf_counter()
@@ -789,7 +790,7 @@ def main():
 
     print("")
     print(
-        "[2/4] Wait for stable FTP size, then anonymous FTP: "
+        "[2/4] Wait for FTP file appearance + dynamic stable size, then anonymous FTP: "
         f"C:/{expected_name}"
     )
     retriever = load_module(
@@ -819,8 +820,16 @@ def main():
     print(f"Retrieved BIN: {bin_path}")
 
     fast_ftp = retrieval.get("fast_ftp", {})
+    appearance = fast_ftp.get("appearance_wait", {})
     readiness = fast_ftp.get("readiness", {})
     validation = fast_ftp.get("download_validation", {})
+
+    if appearance:
+        print(
+            "FTP visible  : "
+            f"{appearance.get('elapsed_s', 0.0):.3f} s "
+            f"({appearance.get('poll_count', 0)} poll(s))"
+        )
 
     if readiness:
         print(
@@ -832,6 +841,17 @@ def main():
             print(
                 "RG03 hdr    : "
                 f"{header.get('total_file_bytes')} bytes declared"
+            )
+        if readiness.get("initial_wait_budget_s") is not None:
+            print(
+                "Wait budget : "
+                f"{readiness.get('initial_wait_budget_s'):.1f} s initial / "
+                f"{readiness.get('absolute_max_wait_s', 0.0):.1f} s hard max"
+            )
+        if readiness.get("observed_growth_rate_Bps"):
+            print(
+                "FTP growth  : "
+                f"{readiness.get('observed_growth_rate_Bps') / (1024 * 1024):.2f} MiB/s EMA"
             )
 
     if validation:

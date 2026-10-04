@@ -50,7 +50,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 # User settings
 # ============================================================================
 
-CAPTURE_TOOL_VERSION = "2026.10.03-r12.7-public-beta4"
+CAPTURE_TOOL_VERSION = "2026.10.04-r12.7-public-beta5-fw-save-compat"
 
 OSC_IP = "127.0.0.1"
 OSC_PORT = 5555
@@ -4361,9 +4361,15 @@ def capture_digital_events(
 # :SAVE:MEMory:WAVeform succeeds while stopped, whereas
 # :LA:DIGital0:DISPlay? ... :LA:DIGital15:DISPlay? are invalid/timeout-prone.
 R10_INSTRUMENT_MEMORY_DIRECTORY = "C:/"  # controller overrides for SMB
-R10_MEMORY_FILENAME_PREFIX = "mho_sync_r12_"
-R10_MEMORY_SAVE_TIMEOUT_S = 60.0
-R10_MEMORY_SAVE_POLL_INTERVAL_S = 0.25
+R10_MEMORY_FILENAME_PREFIX = "mho984_"
+R10_MEMORY_SAVE_TIMEOUT_S = 180.0
+R10_MEMORY_SAVE_POLL_INTERVAL_S = 1.0
+# Firmware compatibility: some MHO984 firmware revisions can keep
+# :SAVE:STATus? at 0 for an extended period, or expose the completed file to
+# FTP after the SCPI save-status indication. The integrated controller may
+# therefore defer final save confirmation to the FTP/RG03 validation stage.
+# Standalone capture keeps the conservative behavior unless explicitly enabled.
+R10_ALLOW_DEFERRED_MEMORY_SAVE_CONFIRMATION = False
 
 
 def r10_query_basic_logic_state(sock: socket.socket) -> Dict[str, Any]:
@@ -4468,10 +4474,19 @@ def r10_save_stopped_memory_waveform(
         completion.get("completed") is True
         and not errors_after
     )
+    deferred_candidate = (
+        completion.get("completed") is not True
+        and not errors_after
+    )
 
     return {
-        "status": "success" if success else "failed",
+        "status": (
+            "success"
+            if success
+            else ("pending_ftp_verification" if deferred_candidate else "failed")
+        ),
         "success": success,
+        "deferred_candidate": deferred_candidate,
         "started_at": started_at,
         "completed_at": now_iso(),
         "elapsed_s": time.monotonic() - started,
@@ -4518,6 +4533,11 @@ def main() -> None:
     instrument_bin_name = (
         f"{R10_MEMORY_FILENAME_PREFIX}{timestamp_token}.bin"
     )
+    if len(instrument_bin_name) > 26:
+        raise DataValidationError(
+            "Instrument Memory BIN filename exceeds the current MHO900 "
+            f"Programming Guide limit (26 chars): {instrument_bin_name!r}"
+        )
     instrument_bin_path = (
         f"{R10_INSTRUMENT_MEMORY_DIRECTORY}{instrument_bin_name}"
     )
@@ -4556,8 +4576,9 @@ def main() -> None:
         "- One fresh SINGLE acquisition is made.\n"
         "- Immediately after STOP, the untouched instrument memory is saved "
         "as BIN on the scope.\n"
-        "- MHO984 may append numeric digits before .bin (for example ...1408490.bin). "
-        "r12 accepts that actual name automatically; do not rename it.\n"
+        "- beta.8 uses a 26-character-or-shorter instrument filename for current "
+        "MHO900 firmware compatibility. If the scope appends numeric digits, the "
+        "retriever accepts the actual variant automatically.\n"
         "- Analog RAW SCPI transfer is intentionally skipped.\n- CH1-CH4 are decoded directly from the same RG03 Memory BIN on the PC.\n"
         "\n"
         "The r11.1 LAN controller uses proven C:/ Memory BIN save. The synchronized "
@@ -4661,11 +4682,30 @@ def main() -> None:
             memory_export_result,
         )
         if not memory_export_result["success"]:
-            raise AcquisitionError(
-                "Instrument memory BIN save failed; refusing to claim "
-                "synchronized digital acquisition."
-            )
-        print("Instrument memory BIN save completed without SCPI error.")
+            if (
+                R10_ALLOW_DEFERRED_MEMORY_SAVE_CONFIRMATION
+                and memory_export_result.get("deferred_candidate")
+            ):
+                warnings.append(
+                    "Memory save completion was not confirmed by :SAVE:STATus? "
+                    "within the extended timeout, but no SCPI error was reported. "
+                    "The integrated controller will continue and require the "
+                    "expected RG03 file to appear on FTP, reach a stable size, "
+                    "download exactly, and pass decoder validation before the "
+                    "acquisition is accepted."
+                )
+                partial_success = True
+                print(
+                    "Memory save status remains pending with no SCPI error; "
+                    "deferring final confirmation to FTP/RG03 validation."
+                )
+            else:
+                raise AcquisitionError(
+                    "Instrument memory BIN save failed; refusing to claim "
+                    "synchronized digital acquisition."
+                )
+        else:
+            print("Instrument memory BIN save completed without SCPI error.")
 
         # Confirm that saving did not restart acquisition.
         r10_minimal_stop_guard(sock)
@@ -4713,17 +4753,22 @@ def main() -> None:
             # The memory BIN may still be useful for digital-only capture.
             partial_success = False
 
-        # r12 capture-core success means:
-        #   * one fresh SINGLE acquisition reached STOP,
-        #   * the untouched memory BIN was successfully saved,
-        #   * no per-channel analog SCPI waveform transfer is attempted.
-        # Analog and D0-D15 are finalized later from the retrieved BIN.
-        #
+        # Capture-core success is deliberately conservative. A save that is
+        # still "pending_ftp_verification" is not called successful here; the
+        # integrated controller can nevertheless continue and establish final
+        # success only after exact FTP transfer plus RG03 decoder validation.
         success = (
             memory_export_result.get("success") is True
             and not analog_failures
             and final_status == "STOP"
         )
+        if (
+            not success
+            and R10_ALLOW_DEFERRED_MEMORY_SAVE_CONFIRMATION
+            and memory_export_result.get("deferred_candidate")
+            and final_status == "STOP"
+        ):
+            partial_success = True
 
     except BaseException as exc:
         caught_exception = exc
@@ -4921,8 +4966,17 @@ def main() -> None:
                 "Synchronized scope BIN: "
                 + memory_export_result["instrument_path"]
             )
-            print("Synchronized Memory BIN was saved to the proven local C:/ path.")
+            print("Synchronized Memory BIN save status was confirmed.")
             print("The r12.7 controller uses the packed-LA decoder and Viewer analog-discovery compatibility fix.")
+        elif (
+            isinstance(memory_export_result, dict)
+            and memory_export_result.get("deferred_candidate")
+            and R10_ALLOW_DEFERRED_MEMORY_SAVE_CONFIRMATION
+        ):
+            print(
+                "Synchronized scope BIN: PENDING FTP/RG03 verification: "
+                + memory_export_result["instrument_path"]
+            )
         else:
             print("Synchronized scope BIN: FAILED / not completed")
 

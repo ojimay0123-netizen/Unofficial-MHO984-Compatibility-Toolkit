@@ -30,7 +30,7 @@ from protocol_decode import (
     decode_gps_nmea, decode_gps_ubx,
 )
 
-APP_VERSION = "0.1.0-beta.7"
+APP_VERSION = "0.1.0-beta.9"
 DEFAULT_CAL_PPM = 2.091228967
 
 

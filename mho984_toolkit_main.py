@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-APP_VERSION = "0.1.0-beta.7"
+APP_VERSION = "0.1.0-beta.9"
 ENGINE_VERSION = "r12.11e public beta.2-compatible"
 VIEWER_VERSION = "r13.6 + protocol overlay beta.1"
 SCRIPT_DIR = Path(__file__).resolve().parent
