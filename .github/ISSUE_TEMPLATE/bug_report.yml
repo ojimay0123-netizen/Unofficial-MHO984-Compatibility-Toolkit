@@ -15,7 +15,7 @@ body:
     id: toolkit_version
     attributes:
       label: Toolkit version / Toolkitバージョン
-      placeholder: v0.1.0-beta.7
+      placeholder: v0.1.0-beta.9
     validations:
       required: true
 
