@@ -22,6 +22,7 @@ import argparse
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -500,7 +501,18 @@ def show_settings_gui(initial_scope_ip: str, initial_base_dir: Path):
     return result["value"]
 
 
+def _install_cancel_signal_handler():
+    # The integrated GUI starts this process in a new Windows process group.
+    # CTRL_BREAK is converted to KeyboardInterrupt so capture-core finally
+    # blocks can record the failure, leave the scope stopped, and close SCPI.
+    if os.name == "nt" and hasattr(signal, "SIGBREAK"):
+        def _raise_keyboard_interrupt(_signum, _frame):
+            raise KeyboardInterrupt("cancel requested by integrated GUI")
+        signal.signal(signal.SIGBREAK, _raise_keyboard_interrupt)
+
+
 def main():
+    _install_cancel_signal_handler()
     ap = argparse.ArgumentParser(
         description=(
             "MHO984 SINGLE -> STOP -> one RG03 BIN -> FTP -> "
