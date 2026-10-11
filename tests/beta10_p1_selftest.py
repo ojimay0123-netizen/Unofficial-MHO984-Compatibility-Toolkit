@@ -24,6 +24,7 @@ def load(name: str, path: Path):
 
 dec = load("beta10_decoder_test", ROOT / "mho984_bin_decoder_r12_7.py")
 diag = load("beta10_diag_test", ROOT / "export_diagnostics_for_issue.py")
+controller_mod = load("beta10_controller_test", ROOT / "mho984_sync_r12_11e_gui_settings.py")
 
 
 def build_minimal_rg03(path: Path) -> None:
@@ -107,11 +108,68 @@ with tempfile.TemporaryDirectory() as td:
         assert not any(name.startswith("protocol_overlays/") for name in names)
         assert "capture_summary.json" in names
 
+# P1: a structurally rejected stable-size download must be re-fetched.
+class FakeRetriever:
+    def __init__(self):
+        self.calls = 0
+
+    def retrieve_bin(self, _host, _name, destination, report_path=None):
+        self.calls += 1
+        p = Path(destination) / "fake.bin"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"first" if self.calls == 1 else b"second")
+        return {
+            "success": True,
+            "local_path": str(p),
+            "successful_method": "fake_ftp",
+        }
+
+
+class FakeDecoder:
+    class BinFormatError(RuntimeError):
+        pass
+
+    calls = 0
+
+    @classmethod
+    def parse_rg03(cls, _path):
+        cls.calls += 1
+        if cls.calls == 1:
+            raise cls.BinFormatError("simulated temporary EOF mismatch")
+
+        class Blob:
+            def __init__(self):
+                self.closed = False
+            def close(self):
+                self.closed = True
+
+        return {}, [], Blob()
+
+
+with tempfile.TemporaryDirectory() as td:
+    fake_retriever = FakeRetriever()
+    sleeps = []
+    retrieval, bin_path, attempts = controller_mod.retrieve_with_structural_preflight(
+        fake_retriever,
+        FakeDecoder,
+        "192.0.2.1",
+        "fake.bin",
+        Path(td),
+        Path(td) / "report.json",
+        max_attempts=3,
+        sleep_fn=sleeps.append,
+    )
+    assert retrieval["success"] is True
+    assert bin_path.name == "fake.bin"
+    assert fake_retriever.calls == 2
+    assert [x["success"] for x in attempts] == [False, True]
+    assert sleeps == [5.0]
+
 # Static integration guards for the beta.10 controller changes.
 controller = (ROOT / "mho984_sync_r12_11e_gui_settings.py").read_text(encoding="utf-8")
 assert 'retrieval_destination = dataset / "memory"' in controller
+assert "retrieve_with_structural_preflight" in controller
 assert "structural_preflight_attempts" in controller
-assert "max_structural_attempts = 3" in controller
 
 main_gui = (ROOT / "mho984_toolkit_main.py").read_text(encoding="utf-8")
 assert "CREATE_NEW_PROCESS_GROUP" in main_gui
