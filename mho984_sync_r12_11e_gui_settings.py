@@ -996,7 +996,7 @@ def main():
         "settings_path": str(SETTINGS_PATH),
         "ultrasigma_used": False,
         "analog_scpi_waveform_transfers": 0,
-        "memory_bin_transfers": 1,
+        "memory_bin_transfers": len(structural_preflight_attempts),
         "lan_method": retrieval.get("successful_method"),
         "scope_file": f"C:/{expected_name}",
         "pc_file": str(bin_path),
