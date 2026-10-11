@@ -1508,6 +1508,9 @@ def decode_to_dataset(
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    close = getattr(blob, "close", None)
+    if close is not None:
+        close()
     return result
 
 
