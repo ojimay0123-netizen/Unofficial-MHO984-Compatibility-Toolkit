@@ -797,27 +797,84 @@ def main():
         RETRIEVER,
         "mho984_retriever_r12_runtime",
     )
+    decoder_preflight = load_module(
+        DECODER,
+        "mho984_decoder_r12_preflight",
+    )
     retrieval_report_path = dataset / "lan_retrieval_r12.json"
     retriever.ALLOW_FALLBACK_DISCOVERY = bool(args.allow_fallback_discovery)
 
-    t = time.perf_counter()
-    retrieval = retriever.retrieve_bin(
-        args.scope_ip,
-        expected_name,
-        lan_inbox,
-        report_path=retrieval_report_path,
-    )
-    timings["lan_retrieval_s"] = time.perf_counter() - t
+    # beta.10: retrieve the one authoritative Memory BIN directly into the
+    # dataset.  Older builds first downloaded to MHO984_LAN_INBOX and then
+    # copied the entire file again into dataset/memory, doubling deep-memory
+    # disk I/O and storage.
+    retrieval_destination = dataset / "memory"
+    retrieval_destination.mkdir(parents=True, exist_ok=True)
 
-    if not retrieval.get("success"):
-        raise R12Error(
-            "Automatic LAN retrieval failed. "
-            f"Report: {retrieval_report_path}"
+    structural_preflight_attempts = []
+    retrieval_total_started = time.perf_counter()
+    retrieval = None
+    bin_path = None
+    max_structural_attempts = 3
+
+    for structural_attempt in range(1, max_structural_attempts + 1):
+        retrieval = retriever.retrieve_bin(
+            args.scope_ip,
+            expected_name,
+            retrieval_destination,
+            report_path=retrieval_report_path,
         )
+        if not retrieval.get("success"):
+            raise R12Error(
+                "Automatic LAN retrieval failed. "
+                f"Report: {retrieval_report_path}"
+            )
 
-    bin_path = Path(retrieval["local_path"]).resolve()
-    print(f"Method       : {retrieval['successful_method']}")
-    print(f"Retrieved BIN: {bin_path}")
+        bin_path = Path(retrieval["local_path"]).resolve()
+        print(f"Method       : {retrieval['successful_method']}")
+        print(f"Retrieved BIN: {bin_path}")
+
+        try:
+            _fh, _records, _blob = decoder_preflight.parse_rg03(bin_path)
+            try:
+                close = getattr(_blob, "close", None)
+                if close is not None:
+                    close()
+            finally:
+                del _blob
+            structural_preflight_attempts.append(
+                {
+                    "attempt": structural_attempt,
+                    "success": True,
+                    "size": bin_path.stat().st_size,
+                }
+            )
+            break
+        except decoder_preflight.BinFormatError as exc:
+            structural_preflight_attempts.append(
+                {
+                    "attempt": structural_attempt,
+                    "success": False,
+                    "size": bin_path.stat().st_size if bin_path.exists() else None,
+                    "error": repr(exc),
+                }
+            )
+            if structural_attempt >= max_structural_attempts:
+                raise R12Error(
+                    "RG03 structural preflight still failed after "
+                    f"{max_structural_attempts} retrieval attempt(s): {exc}"
+                ) from exc
+            retry_delay_s = 5.0 * structural_attempt
+            print(
+                "RG03 preflight rejected the stable-size download; "
+                "the scope may have paused while still writing. "
+                f"Re-checking FTP after {retry_delay_s:.1f} s "
+                f"(attempt {structural_attempt + 1}/{max_structural_attempts})."
+            )
+            time.sleep(retry_delay_s)
+
+    timings["lan_retrieval_s"] = time.perf_counter() - retrieval_total_started
+    assert retrieval is not None and bin_path is not None
 
     fast_ftp = retrieval.get("fast_ftp", {})
     appearance = fast_ftp.get("appearance_wait", {})
@@ -890,6 +947,9 @@ def main():
         "scope_ip": args.scope_ip,
         "dataset_base_dir": str(base_dir),
         "lan_inbox": str(lan_inbox),
+        "retrieval_destination": str(retrieval_destination),
+        "memory_bin_duplicate_copy_avoided": True,
+        "structural_preflight_attempts": structural_preflight_attempts,
         "settings_path": str(SETTINGS_PATH),
         "ultrasigma_used": False,
         "analog_scpi_waveform_transfers": 0,
@@ -921,7 +981,11 @@ def main():
     print(f"Dataset : {dataset}")
     print(f"BIN     : {bin_path}")
     print("Analog SCPI waveform transfers: 0")
-    print("FTP Memory BIN transfers       : 1")
+    print(
+        "FTP Memory BIN transfers       : "
+        f"{len(structural_preflight_attempts)}"
+    )
+    print("Memory BIN duplicate copy      : avoided (direct to dataset/memory)")
     print(
         "Time to decoded dataset        : "
         f"{timings['total_to_decoded_dataset_s']:.3f} s"
