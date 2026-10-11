@@ -62,6 +62,88 @@ def load_module(path: Path, name: str):
     spec.loader.exec_module(mod)
     return mod
 
+def retrieve_with_structural_preflight(
+    retriever,
+    decoder_preflight,
+    scope_ip: str,
+    expected_name: str,
+    destination: Path,
+    report_path: Path,
+    *,
+    max_attempts: int = 3,
+    sleep_fn=time.sleep,
+):
+    """Retrieve, then require RG03 exact-structure parsing before acceptance.
+
+    A scope may briefly stop growing its FTP file before resuming the write.
+    Stable SIZE alone is therefore not the final acceptance condition.  When
+    the decoder rejects the downloaded structure, re-check FTP and download
+    again after a short delay.  Unrelated decoder failures are not hidden:
+    after max_attempts the structural error is raised as R12Error.
+    """
+    attempts = []
+    retrieval = None
+    bin_path = None
+
+    for attempt in range(1, max_attempts + 1):
+        retrieval = retriever.retrieve_bin(
+            scope_ip,
+            expected_name,
+            destination,
+            report_path=report_path,
+        )
+        if not retrieval.get("success"):
+            raise R12Error(
+                "Automatic LAN retrieval failed. "
+                f"Report: {report_path}"
+            )
+
+        bin_path = Path(retrieval["local_path"]).resolve()
+        print(f"Method       : {retrieval['successful_method']}")
+        print(f"Retrieved BIN: {bin_path}")
+
+        try:
+            _fh, _records, _blob = decoder_preflight.parse_rg03(bin_path)
+            try:
+                close = getattr(_blob, "close", None)
+                if close is not None:
+                    close()
+            finally:
+                del _blob
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "success": True,
+                    "size": bin_path.stat().st_size,
+                }
+            )
+            return retrieval, bin_path, attempts
+        except decoder_preflight.BinFormatError as exc:
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "success": False,
+                    "size": bin_path.stat().st_size if bin_path.exists() else None,
+                    "error": repr(exc),
+                }
+            )
+            if attempt >= max_attempts:
+                raise R12Error(
+                    "RG03 structural preflight still failed after "
+                    f"{max_attempts} retrieval attempt(s): {exc}"
+                ) from exc
+            retry_delay_s = 5.0 * attempt
+            print(
+                "RG03 preflight rejected the stable-size download; "
+                "the scope may have paused while still writing. "
+                f"Re-checking FTP after {retry_delay_s:.1f} s "
+                f"(attempt {attempt + 1}/{max_attempts})."
+            )
+            sleep_fn(retry_delay_s)
+
+    raise AssertionError("unreachable structural-preflight loop")
+
+
 
 def dataset_dirs(base_dir: Path):
     if not base_dir.exists():
@@ -823,70 +905,19 @@ def main():
     retrieval_destination = dataset / "memory"
     retrieval_destination.mkdir(parents=True, exist_ok=True)
 
-    structural_preflight_attempts = []
     retrieval_total_started = time.perf_counter()
-    retrieval = None
-    bin_path = None
-    max_structural_attempts = 3
-
-    for structural_attempt in range(1, max_structural_attempts + 1):
-        retrieval = retriever.retrieve_bin(
+    retrieval, bin_path, structural_preflight_attempts = (
+        retrieve_with_structural_preflight(
+            retriever,
+            decoder_preflight,
             args.scope_ip,
             expected_name,
             retrieval_destination,
-            report_path=retrieval_report_path,
+            retrieval_report_path,
+            max_attempts=3,
         )
-        if not retrieval.get("success"):
-            raise R12Error(
-                "Automatic LAN retrieval failed. "
-                f"Report: {retrieval_report_path}"
-            )
-
-        bin_path = Path(retrieval["local_path"]).resolve()
-        print(f"Method       : {retrieval['successful_method']}")
-        print(f"Retrieved BIN: {bin_path}")
-
-        try:
-            _fh, _records, _blob = decoder_preflight.parse_rg03(bin_path)
-            try:
-                close = getattr(_blob, "close", None)
-                if close is not None:
-                    close()
-            finally:
-                del _blob
-            structural_preflight_attempts.append(
-                {
-                    "attempt": structural_attempt,
-                    "success": True,
-                    "size": bin_path.stat().st_size,
-                }
-            )
-            break
-        except decoder_preflight.BinFormatError as exc:
-            structural_preflight_attempts.append(
-                {
-                    "attempt": structural_attempt,
-                    "success": False,
-                    "size": bin_path.stat().st_size if bin_path.exists() else None,
-                    "error": repr(exc),
-                }
-            )
-            if structural_attempt >= max_structural_attempts:
-                raise R12Error(
-                    "RG03 structural preflight still failed after "
-                    f"{max_structural_attempts} retrieval attempt(s): {exc}"
-                ) from exc
-            retry_delay_s = 5.0 * structural_attempt
-            print(
-                "RG03 preflight rejected the stable-size download; "
-                "the scope may have paused while still writing. "
-                f"Re-checking FTP after {retry_delay_s:.1f} s "
-                f"(attempt {structural_attempt + 1}/{max_structural_attempts})."
-            )
-            time.sleep(retry_delay_s)
-
+    )
     timings["lan_retrieval_s"] = time.perf_counter() - retrieval_total_started
-    assert retrieval is not None and bin_path is not None
 
     fast_ftp = retrieval.get("fast_ftp", {})
     appearance = fast_ftp.get("appearance_wait", {})
