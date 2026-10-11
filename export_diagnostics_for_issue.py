@@ -9,7 +9,7 @@ from datetime import datetime
 
 TEXT_EXTS={".json", ".txt", ".log", ".csv"}
 MAX_FILE=8*1024*1024
-SKIP_PARTS={"analog", "memory"}
+SKIP_PARTS={"analog", "memory", "protocol_overlays"}
 SKIP_SUFFIXES={".bin", ".npy", ".npz"}
 SENSITIVE_KEYS={
     "ip","host","scope_ip","oscilloscope_ip","idn","serial","serial_number",
