@@ -294,6 +294,9 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
     # A read-only mmap keeps parser/extractor semantics (len, slicing,
     # struct.unpack_from and np.frombuffer) while avoiding a second full-size
     # copy of multi-hundred-MB/GB Memory BIN files in RAM.
+    file_size = path.stat().st_size
+    if file_size < FILE_HEADER_SIZE:
+        raise BinFormatError("file is shorter than RG03 file header")
     source = path.open("rb")
     try:
         blob = mmap.mmap(source.fileno(), length=0, access=mmap.ACCESS_READ)
