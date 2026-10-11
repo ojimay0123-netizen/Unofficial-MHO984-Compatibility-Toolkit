@@ -1,0 +1,57 @@
+name: beta10-ci
+
+on:
+  push:
+    branches:
+      - main
+      - beta.10-p1-hardening
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Windows Python ${{ matrix.python-version }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.13"
+          - "3.14"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile all Python sources
+        run: python -m compileall -q .
+
+      - name: Protocol decoder selftest
+        run: python tests/protocol_decoder_selftest.py
+
+      - name: Protocol overlay selftest
+        run: python tests/protocol_overlay_selftest.py
+
+      - name: Firmware and FTP compatibility selftest
+        run: python tests/firmware_save_compat_selftest.py
+
+      - name: beta.10 P1 hardening selftest
+        run: python tests/beta10_p1_selftest.py
