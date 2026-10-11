@@ -135,13 +135,13 @@ assert bad_ce and not bad_ce[0].ok and bad_ce[0].details["crc_ok"] is False
 gga_body="GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,"
 gga_cs=0
 for ch in gga_body.encode("ascii"): gga_cs ^= ch
-gga=(f"\${gga_body}*{gga_cs:02X}\\r\\n").encode("ascii")
+gga=(f"${gga_body}*{gga_cs:02X}\r\n").encode("ascii")
 gga_sig=signal_from_bits(uart_stream(gga),1/9600)
 gga_ev=decode_gps_nmea(gga_sig,baud=9600)
 assert gga_ev and gga_ev[0].ok and gga_ev[0].details["sentence_type"]=="GPGGA"
 assert gga_ev[0].details["fix_quality"]==1 and gga_ev[0].details["satellites"]==8
 
-bad_nmea=(f"\${gga_body}*00\\r\\n").encode("ascii")
+bad_nmea=(f"${gga_body}*00\r\n").encode("ascii")
 bad_ne=decode_gps_nmea(signal_from_bits(uart_stream(bad_nmea),1/9600),baud=9600)
 assert bad_ne and not bad_ne[0].ok and bad_ne[0].details["checksum_ok"] is False
 
