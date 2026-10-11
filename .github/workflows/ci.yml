@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - beta.10-p1-hardening
   pull_request:
     branches:
       - main
