@@ -997,7 +997,7 @@ def load_digital_events(
                         bus_value = 0
                         for bit_index, bit_value in enumerate(explicit_bits):
                             bus_value |= (bit_value & 1) << bit_index
-                    else:                        hex_text = str(row.get("data_hex", "") or "").strip()
+                    else:\n                        hex_text = str(row.get("data_hex", "") or "").strip()
                         dec_text = str(row.get("data_decimal", "") or "").strip()
 
                         if hex_text:
