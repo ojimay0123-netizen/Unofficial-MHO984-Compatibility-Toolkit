@@ -1006,7 +1006,8 @@ def decode_to_dataset(
     digital_time_calibration_reference_s: float = DEFAULT_DIGITAL_TIME_CALIBRATION_REFERENCE_S,
 ) -> Dict[str, Any]:
     bin_path = Path(bin_path).resolve()
-    dataset_root = Path(dataset_root).resolve()    dataset_root.mkdir(parents=True, exist_ok=True)
+    dataset_root = Path(dataset_root).resolve()
+    dataset_root.mkdir(parents=True, exist_ok=True)
     analog_dir = dataset_root / "analog"
     digital_dir = dataset_root / "digital"
     memory_dir = dataset_root / "memory"
