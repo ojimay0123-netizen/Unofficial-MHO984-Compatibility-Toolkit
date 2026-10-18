@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # Independent, unofficial compatibility tool; not affiliated with RIGOL.
 """
-MHO984 Toolkit Public Beta v0.1.0-beta.9
+MHO984 Toolkit Public Beta v0.1.0-beta.10
 
 Default startup:
   Settings GUI
@@ -22,6 +22,7 @@ import argparse
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -31,7 +32,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 
-VERSION = "0.1.0-beta.9 (engine r12.11e / viewer r13.6 + dynamic FTP size wait)"
+VERSION = "0.1.0-beta.10 (engine r12.11e / viewer r13.6 + dynamic FTP size wait)"
 
 OSC_IP = ""
 OSC_PORT = 5555
@@ -60,6 +61,88 @@ def load_module(path: Path, name: str):
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+def retrieve_with_structural_preflight(
+    retriever,
+    decoder_preflight,
+    scope_ip: str,
+    expected_name: str,
+    destination: Path,
+    report_path: Path,
+    *,
+    max_attempts: int = 3,
+    sleep_fn=time.sleep,
+):
+    """Retrieve, then require RG03 exact-structure parsing before acceptance.
+
+    A scope may briefly stop growing its FTP file before resuming the write.
+    Stable SIZE alone is therefore not the final acceptance condition.  When
+    the decoder rejects the downloaded structure, re-check FTP and download
+    again after a short delay.  Unrelated decoder failures are not hidden:
+    after max_attempts the structural error is raised as R12Error.
+    """
+    attempts = []
+    retrieval = None
+    bin_path = None
+
+    for attempt in range(1, max_attempts + 1):
+        retrieval = retriever.retrieve_bin(
+            scope_ip,
+            expected_name,
+            destination,
+            report_path=report_path,
+        )
+        if not retrieval.get("success"):
+            raise R12Error(
+                "Automatic LAN retrieval failed. "
+                f"Report: {report_path}"
+            )
+
+        bin_path = Path(retrieval["local_path"]).resolve()
+        print(f"Method       : {retrieval['successful_method']}")
+        print(f"Retrieved BIN: {bin_path}")
+
+        try:
+            _fh, _records, _blob = decoder_preflight.parse_rg03(bin_path)
+            try:
+                close = getattr(_blob, "close", None)
+                if close is not None:
+                    close()
+            finally:
+                del _blob
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "success": True,
+                    "size": bin_path.stat().st_size,
+                }
+            )
+            return retrieval, bin_path, attempts
+        except decoder_preflight.BinFormatError as exc:
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "success": False,
+                    "size": bin_path.stat().st_size if bin_path.exists() else None,
+                    "error": repr(exc),
+                }
+            )
+            if attempt >= max_attempts:
+                raise R12Error(
+                    "RG03 structural preflight still failed after "
+                    f"{max_attempts} retrieval attempt(s): {exc}"
+                ) from exc
+            retry_delay_s = 5.0 * attempt
+            print(
+                "RG03 preflight rejected the stable-size download; "
+                "the scope may have paused while still writing. "
+                f"Re-checking FTP after {retry_delay_s:.1f} s "
+                f"(attempt {attempt + 1}/{max_attempts})."
+            )
+            sleep_fn(retry_delay_s)
+
+    raise AssertionError("unreachable structural-preflight loop")
+
 
 
 def dataset_dirs(base_dir: Path):
@@ -500,7 +583,18 @@ def show_settings_gui(initial_scope_ip: str, initial_base_dir: Path):
     return result["value"]
 
 
+def _install_cancel_signal_handler():
+    # The integrated GUI starts this process in a new Windows process group.
+    # CTRL_BREAK is converted to KeyboardInterrupt so capture-core finally
+    # blocks can record the failure, leave the scope stopped, and close SCPI.
+    if os.name == "nt" and hasattr(signal, "SIGBREAK"):
+        def _raise_keyboard_interrupt(_signum, _frame):
+            raise KeyboardInterrupt("cancel requested by integrated GUI")
+        signal.signal(signal.SIGBREAK, _raise_keyboard_interrupt)
+
+
 def main():
+    _install_cancel_signal_handler()
     ap = argparse.ArgumentParser(
         description=(
             "MHO984 SINGLE -> STOP -> one RG03 BIN -> FTP -> "
@@ -567,7 +661,7 @@ def main():
     args = ap.parse_args()
 
     console_status("=" * 76)
-    console_status("MHO984 Toolkit Public Beta v0.1.0-beta.9 startup")
+    console_status("MHO984 Toolkit Public Beta v0.1.0-beta.10 startup")
     console_status("=" * 76)
     console_status(f"Python      : {sys.executable}")
     console_status(f"Program dir : {SCRIPT_DIR}")
@@ -681,7 +775,7 @@ def main():
     lan_inbox.mkdir(parents=True, exist_ok=True)
 
     print("=" * 76)
-    print("MHO984 Toolkit Public Beta v0.1.0-beta.9 - Scope/Dual Edge Drift")
+    print("MHO984 Toolkit Public Beta v0.1.0-beta.10 - Scope/Dual Edge Drift")
     print("=" * 76)
     print(f"Scope       : {args.scope_ip}:{args.scope_port}")
     print(f"Dataset dir : {base_dir}")
@@ -797,27 +891,33 @@ def main():
         RETRIEVER,
         "mho984_retriever_r12_runtime",
     )
+    decoder_preflight = load_module(
+        DECODER,
+        "mho984_decoder_r12_preflight",
+    )
     retrieval_report_path = dataset / "lan_retrieval_r12.json"
     retriever.ALLOW_FALLBACK_DISCOVERY = bool(args.allow_fallback_discovery)
 
-    t = time.perf_counter()
-    retrieval = retriever.retrieve_bin(
-        args.scope_ip,
-        expected_name,
-        lan_inbox,
-        report_path=retrieval_report_path,
-    )
-    timings["lan_retrieval_s"] = time.perf_counter() - t
+    # beta.10: retrieve the one authoritative Memory BIN directly into the
+    # dataset.  Older builds first downloaded to MHO984_LAN_INBOX and then
+    # copied the entire file again into dataset/memory, doubling deep-memory
+    # disk I/O and storage.
+    retrieval_destination = dataset / "memory"
+    retrieval_destination.mkdir(parents=True, exist_ok=True)
 
-    if not retrieval.get("success"):
-        raise R12Error(
-            "Automatic LAN retrieval failed. "
-            f"Report: {retrieval_report_path}"
+    retrieval_total_started = time.perf_counter()
+    retrieval, bin_path, structural_preflight_attempts = (
+        retrieve_with_structural_preflight(
+            retriever,
+            decoder_preflight,
+            args.scope_ip,
+            expected_name,
+            retrieval_destination,
+            retrieval_report_path,
+            max_attempts=3,
         )
-
-    bin_path = Path(retrieval["local_path"]).resolve()
-    print(f"Method       : {retrieval['successful_method']}")
-    print(f"Retrieved BIN: {bin_path}")
+    )
+    timings["lan_retrieval_s"] = time.perf_counter() - retrieval_total_started
 
     fast_ftp = retrieval.get("fast_ftp", {})
     appearance = fast_ftp.get("appearance_wait", {})
@@ -890,10 +990,13 @@ def main():
         "scope_ip": args.scope_ip,
         "dataset_base_dir": str(base_dir),
         "lan_inbox": str(lan_inbox),
+        "retrieval_destination": str(retrieval_destination),
+        "memory_bin_duplicate_copy_avoided": True,
+        "structural_preflight_attempts": structural_preflight_attempts,
         "settings_path": str(SETTINGS_PATH),
         "ultrasigma_used": False,
         "analog_scpi_waveform_transfers": 0,
-        "memory_bin_transfers": 1,
+        "memory_bin_transfers": len(structural_preflight_attempts),
         "lan_method": retrieval.get("successful_method"),
         "scope_file": f"C:/{expected_name}",
         "pc_file": str(bin_path),
@@ -921,7 +1024,11 @@ def main():
     print(f"Dataset : {dataset}")
     print(f"BIN     : {bin_path}")
     print("Analog SCPI waveform transfers: 0")
-    print("FTP Memory BIN transfers       : 1")
+    print(
+        "FTP Memory BIN transfers       : "
+        f"{len(structural_preflight_attempts)}"
+    )
+    print("Memory BIN duplicate copy      : avoided (direct to dataset/memory)")
     print(
         "Time to decoded dataset        : "
         f"{timings['total_to_decoded_dataset_s']:.3f} s"

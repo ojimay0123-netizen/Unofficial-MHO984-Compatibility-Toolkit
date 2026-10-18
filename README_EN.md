@@ -1,8 +1,19 @@
-# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.9
+# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.10
 
 An independent, unofficial Windows toolkit for interoperability with the RIGOL MHO984. The acquisition engine is r12.11e and the Viewer is r13.5. Normal workflows are now launched from one main window.
 
 > This project is not an official RIGOL product and is not affiliated with, endorsed by, or warranted by RIGOL Technologies Co., Ltd. RIGOL and product names belong to their respective owners and are used only to identify the interoperability target.
+
+## beta.10: acquisition hardening / 取得処理の改善
+
+- RG03 BIN入力をmmap化し、全ファイル読込によるメモリ増加を低減。
+- Memory BINを`dataset/memory`へ直接保存し、重複コピーを削減。
+- RG03構造検証と最大3回のFTP再確認・再取得を追加。
+- 診断ZIPから`protocol_overlays`を既定で除外。
+- 中止時にCTRL_BREAK/SIGINTで終了を要求してから、必要時のみ強制終了。
+- デコーダとViewerの構文不具合を修正。Windows Python 3.11 / 3.13 / 3.14 CIを追加。
+
+Windows CI passed for the tested beta.10 implementation. The maintainer reported beta.10 checking complete and authorized publication on 2026-10-18; detailed hardware conditions were not supplied with that confirmation.
 
 ## Screenshot
 
@@ -49,7 +60,7 @@ The bundled +2.091228967 ppm digital timebase value is an empirical relative-ali
 
 ## Release status
 
-`v0.1.0-beta.9` is an **MHO984 validated / community testing beta**. beta.9 adds firmware-save compatibility and capacity-aware dynamic FTP SIZE waiting for large Memory BIN captures; successful acquisition has been reported on a RIGOL loaner/demo MHO984 with the 500 Mpts storage depth option. Protocol results are convenience analysis only and are not conformance certification. CAN FD is not implemented.
+`v0.1.0-beta.10` is an **MHO984 validated / community testing beta**. beta.9 adds firmware-save compatibility and capacity-aware dynamic FTP SIZE waiting for large Memory BIN captures; successful acquisition has been reported on a RIGOL loaner/demo MHO984 with the 500 Mpts storage depth option. Protocol results are convenience analysis only and are not conformance certification. CAN FD is not implemented.
 
 
 ## beta.5: Viewer protocol bands

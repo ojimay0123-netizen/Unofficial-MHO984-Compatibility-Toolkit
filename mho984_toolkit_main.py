@@ -10,6 +10,7 @@ import os
 import queue
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -19,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-APP_VERSION = "0.1.0-beta.9"
+APP_VERSION = "0.1.0-beta.10"
 ENGINE_VERSION = "r12.11e public beta.2-compatible"
 VIEWER_VERSION = "r13.6 + protocol overlay beta.1"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -616,7 +617,10 @@ class MainApp(tk.Tk):
             try:
                 creationflags = 0
                 if os.name == "nt":
-                    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    creationflags = (
+                        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    )
                 child_env = os.environ.copy()
                 child_env["PYTHONIOENCODING"] = "utf-8"
                 proc = subprocess.Popen(
@@ -672,17 +676,49 @@ class MainApp(tk.Tk):
             pass
         self.after(100, self._drain_queue)
 
+    def _signal_child_for_graceful_cancel(self, proc: subprocess.Popen) -> bool:
+        """Ask the acquisition child to unwind so its finally blocks can STOP/close."""
+        try:
+            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
+                proc.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                proc.send_signal(signal.SIGINT)
+            return True
+        except Exception as exc:
+            self._append_log(f"穏やかな中止要求に失敗しました: {exc}\n")
+            return False
+
+    def _terminate_if_still_running(self, proc: subprocess.Popen):
+        if proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            self._append_log(
+                "中止要求から終了しなかったため、子プロセスを終了しました。\n"
+            )
+        except Exception as exc:
+            self._append_log(f"強制終了要求エラー: {exc}\n")
+
     def cancel_current(self):
         proc = self.current_process
         if proc is None or proc.poll() is not None:
             return
-        if not messagebox.askyesno("処理を中止", "現在の処理を中止しますか？\n途中のデータセットが残る場合があります。", parent=self):
+        if not messagebox.askyesno(
+            "処理を中止",
+            "現在の処理を中止しますか？\n"
+            "まず安全な中止シグナルを送り、応答しない場合のみ終了します。\n"
+            "途中のデータセットが残る場合があります。",
+            parent=self,
+        ):
             return
-        try:
-            proc.terminate()
-            self._append_log("ユーザー操作により処理を中止しました。\n")
-        except Exception as exc:
-            self._append_log(f"中止要求エラー: {exc}\n")
+        graceful = self._signal_child_for_graceful_cancel(proc)
+        if graceful:
+            self._append_log(
+                "ユーザー操作により安全な中止を要求しました。\n"
+            )
+            self.after(2500, lambda p=proc: self._terminate_if_still_running(p))
+        else:
+            self._terminate_if_still_running(proc)
 
     def run_setup(self):
         if self.busy:
@@ -726,10 +762,14 @@ class MainApp(tk.Tk):
             if not messagebox.askyesno("終了", "処理が実行中です。終了すると処理も中断されます。\n終了しますか？", parent=self):
                 return
             if self.current_process and self.current_process.poll() is None:
-                try:
-                    self.current_process.terminate()
-                except Exception:
-                    pass
+                proc = self.current_process
+                if self._signal_child_for_graceful_cancel(proc):
+                    try:
+                        proc.wait(timeout=2.5)
+                    except subprocess.TimeoutExpired:
+                        self._terminate_if_still_running(proc)
+                else:
+                    self._terminate_if_still_running(proc)
         self.destroy()
 
 

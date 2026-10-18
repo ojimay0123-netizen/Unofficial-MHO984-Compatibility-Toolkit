@@ -1,9 +1,20 @@
-# MHO984 Toolkit v0.1.0-beta.9 (Unofficial)
+# MHO984 Toolkit v0.1.0-beta.10 (Unofficial)
 
 Windows向けの、RIGOL MHO984との互換性を目的とした**独立・非公式**の波形取得／解析ツールです。
 取得エンジン r12.11e と Viewer r13.5 を、通常利用では1つのメイン画面から操作できるよう整理したBeta版です。
 
 > **重要:** 本プロジェクトは RIGOL Technologies Co., Ltd. またはその関連会社による公式製品ではなく、提携・承認・保証を受けたものでもありません。RIGOLおよび製品名は各権利者に帰属します。名称は互換性の対象を識別するためにのみ使用しています。
+
+## beta.10: acquisition hardening / 取得処理の改善
+
+- RG03 BIN入力をmmap化し、全ファイル読込によるメモリ増加を低減。
+- Memory BINを`dataset/memory`へ直接保存し、重複コピーを削減。
+- RG03構造検証と最大3回のFTP再確認・再取得を追加。
+- 診断ZIPから`protocol_overlays`を既定で除外。
+- 中止時にCTRL_BREAK/SIGINTで終了を要求してから、必要時のみ強制終了。
+- デコーダとViewerの構文不具合を修正。Windows Python 3.11 / 3.13 / 3.14 CIを追加。
+
+Windows CI passed for the tested beta.10 implementation. The maintainer reported beta.10 checking complete and authorized publication on 2026-10-18; detailed hardware conditions were not supplied with that confirmation.
 
 ## スクリーンショット
 
@@ -141,7 +152,7 @@ Viewerの初期値は **Raw** です。
 
 ## Release status
 
-`v0.1.0-beta.9` は **MHO984 validated / community testing beta** です。Firmware更新後の遅延FTP公開と大容量Memory BINに対する容量依存の動的待機を追加し、500 Mpts storage depth option搭載のRIGOL貸出デモMHO984で実機取得成功が報告されています。
+`v0.1.0-beta.10` は **MHO984 validated / community testing beta** です。Firmware更新後の遅延FTP公開と大容量Memory BINに対する容量依存の動的待機を追加し、500 Mpts storage depth option搭載のRIGOL貸出デモMHO984で実機取得成功が報告されています。
 
 
 ## beta.5: Viewerプロトコル帯

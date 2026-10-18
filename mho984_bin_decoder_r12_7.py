@@ -67,6 +67,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mmap
 import shutil
 import struct
 from dataclasses import dataclass, asdict
@@ -232,7 +233,7 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def parse_waveform_header(blob: bytes, offset: int) -> WaveformHeader:
+def parse_waveform_header(blob: Any, offset: int) -> WaveformHeader:
     if offset + WAVEFORM_HEADER_SIZE > len(blob):
         raise BinFormatError("truncated waveform header")
 
@@ -262,7 +263,7 @@ def parse_waveform_header(blob: bytes, offset: int) -> WaveformHeader:
     )
 
 
-def parse_data_header(blob: bytes, offset: int) -> DataHeader:
+def parse_data_header(blob: Any, offset: int) -> DataHeader:
     if offset + DATA_HEADER_SIZE > len(blob):
         raise BinFormatError("truncated data header")
 
@@ -288,8 +289,19 @@ def parse_data_header(blob: bytes, offset: int) -> DataHeader:
     )
 
 
-def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], bytes]:
-    blob = path.read_bytes()
+def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.mmap]:
+    # Do not materialize deep-memory captures as one Python bytes object.
+    # A read-only mmap keeps parser/extractor semantics (len, slicing,
+    # struct.unpack_from and np.frombuffer) while avoiding a second full-size
+    # copy of multi-hundred-MB/GB Memory BIN files in RAM.
+    file_size = path.stat().st_size
+    if file_size < FILE_HEADER_SIZE:
+        raise BinFormatError("file is shorter than RG03 file header")
+    source = path.open("rb")
+    try:
+        blob = mmap.mmap(source.fileno(), length=0, access=mmap.ACCESS_READ)
+    finally:
+        source.close()
     if len(blob) < FILE_HEADER_SIZE:
         raise BinFormatError("file is shorter than RG03 file header")
     if blob[:4] != EXPECTED_MAGIC:
@@ -598,7 +610,7 @@ def validate_common_timebase(records: List[WaveformRecord]) -> Dict[str, Any]:
 
 
 def extract_analog_float32(
-    blob: bytes,
+    blob: Any,
     record: WaveformRecord,
 ) -> np.ndarray:
     d = record.data
@@ -618,7 +630,7 @@ def extract_analog_float32(
 
 def decode_analog_records_to_dataset(
     dataset_root: Path,
-    blob: bytes,
+    blob: Any,
     records: List[WaveformRecord],
 ) -> Dict[str, Any]:
     """
@@ -745,7 +757,7 @@ def describe_analog_records_without_rewrite(
 
 
 def extract_la_bus_u16(
-    blob: bytes,
+    blob: Any,
     record: WaveformRecord,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
@@ -997,7 +1009,8 @@ def decode_to_dataset(
     digital_time_calibration_reference_s: float = DEFAULT_DIGITAL_TIME_CALIBRATION_REFERENCE_S,
 ) -> Dict[str, Any]:
     bin_path = Path(bin_path).resolve()
-    dataset_root = Path(dataset_root).resolve()    dataset_root.mkdir(parents=True, exist_ok=True)
+    dataset_root = Path(dataset_root).resolve()
+    dataset_root.mkdir(parents=True, exist_ok=True)
     analog_dir = dataset_root / "analog"
     digital_dir = dataset_root / "digital"
     memory_dir = dataset_root / "memory"
@@ -1498,6 +1511,9 @@ def decode_to_dataset(
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    close = getattr(blob, "close", None)
+    if close is not None:
+        close()
     return result
 
 
