@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # Independent, unofficial compatibility tool; not affiliated with RIGOL.
 """
-MHO984 Toolkit Public Beta v0.1.0-beta.9
+MHO984 Toolkit Public Beta v0.1.0-beta.10
 
 Default startup:
   Settings GUI
@@ -32,7 +32,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 
-VERSION = "0.1.0-beta.9 (engine r12.11e / viewer r13.6 + dynamic FTP size wait)"
+VERSION = "0.1.0-beta.10 (engine r12.11e / viewer r13.6 + dynamic FTP size wait)"
 
 OSC_IP = ""
 OSC_PORT = 5555
@@ -661,7 +661,7 @@ def main():
     args = ap.parse_args()
 
     console_status("=" * 76)
-    console_status("MHO984 Toolkit Public Beta v0.1.0-beta.9 startup")
+    console_status("MHO984 Toolkit Public Beta v0.1.0-beta.10 startup")
     console_status("=" * 76)
     console_status(f"Python      : {sys.executable}")
     console_status(f"Program dir : {SCRIPT_DIR}")
@@ -775,7 +775,7 @@ def main():
     lan_inbox.mkdir(parents=True, exist_ok=True)
 
     print("=" * 76)
-    print("MHO984 Toolkit Public Beta v0.1.0-beta.9 - Scope/Dual Edge Drift")
+    print("MHO984 Toolkit Public Beta v0.1.0-beta.10 - Scope/Dual Edge Drift")
     print("=" * 76)
     print(f"Scope       : {args.scope_ip}:{args.scope_port}")
     print(f"Dataset dir : {base_dir}")

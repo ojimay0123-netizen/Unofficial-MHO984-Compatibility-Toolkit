@@ -6,7 +6,7 @@ Windows向けPythonソース配布です。Python runtimeは同梱しません�
 
 ## 導入
 
-1. [beta.9 Release](https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/releases/tag/v0.1.0-beta.9)から `Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.9.zip` と対応する `.zip.sha256` を取得します。GitHub自動生成のSource code ZIPと配布ZIPは区別してください。
+1. [beta.10 Release](https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/releases/tag/v0.1.0-beta.10)から `Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.10.zip` と対応する `.zip.sha256` を取得します。GitHub自動生成のSource code ZIPと配布ZIPは区別してください。
 2. PowerShellで下記を実行し、結果をダウンロードしたsha256ファイルの値と比較します。不一致なら使用せず再取得してください。
 3. ZIPを、書き込み可能なローカルフォルダへ完全に展開します。ZIP内から直接BATを起動しないでください。
 4. python.orgのPython 3を用意します。Python launcherとTcl/Tkを含む構成を使用し、下記のTk確認で小窓が表示されることを確認します。
@@ -16,7 +16,7 @@ Windows向けPythonソース配布です。Python runtimeは同梱しません�
 8. オフラインBINを開くか、下記LAN準備を済ませて取得します。初回の合否確認は [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md) を使用してください。
 
 ```powershell
-Get-FileHash .\Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.9.zip -Algorithm SHA256
+Get-FileHash .\Unofficial_MHO984_Compatibility_Toolkit_v0.1.0-beta.10.zip -Algorithm SHA256
 py -3 --version
 py -3 -m tkinter
 ```
@@ -59,8 +59,8 @@ CLI/ヘッドレスの既定はタイムアウト中止です。自動Forceを�
 
 ## 配布版との関係
 
-mainの文書更新は公開済みタグやRelease ZIPへ自動反映されません。beta.7配布物の識別にはタグ・ファイル名・チェックサムを使い、この文書はmainで追加された補足手順として参照してください。
+mainの文書更新は公開済みタグやRelease ZIPへ自動反映されません。beta.10配布物の識別にはタグ・ファイル名・チェックサムを使い、この文書はmainで追加された補足手順として参照してください。
 
 ## English quick start
 
-Install Python 3 with Tkinter, venv and pip; exact validated Windows/Python/package versions are not yet recorded. Prefer 64-bit Python for large captures. Download the named beta.7 ZIP and matching checksum from Releases, compare SHA-256, fully extract to a writable local folder, run setup_venv.bat until “Setup complete”, then START_MHO984_Toolkit.bat. Setup needs package-download connectivity and prefers py -3. Configure scope IPv4 and PC storage. SCPI defaults to TCP 5555; FTP uses TCP 21 plus a data connection. The scope remains stopped after acquisition. Timeout defaults to 30 seconds (range 1–3600); Force is explicit and does not prove the original trigger condition occurred. Main documentation updates do not replace the published tag or ZIP.
+Install Python 3 with Tkinter, venv and pip; exact validated Windows/Python/package versions are not yet recorded. Prefer 64-bit Python for large captures. Download the named beta.10 ZIP and matching checksum from Releases, compare SHA-256, fully extract to a writable local folder, run setup_venv.bat until “Setup complete”, then START_MHO984_Toolkit.bat. Setup needs package-download connectivity and prefers py -3. Configure scope IPv4 and PC storage. SCPI defaults to TCP 5555; FTP uses TCP 21 plus a data connection. The scope remains stopped after acquisition. Timeout defaults to 30 seconds (range 1–3600); Force is explicit and does not prove the original trigger condition occurred. Main documentation updates do not replace the published tag or ZIP.

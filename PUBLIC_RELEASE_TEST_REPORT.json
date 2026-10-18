@@ -1,51 +1,78 @@
 {
-  "release": "v0.1.0-beta.9",
-  "tested_at": "2026-10-04",
-  "checks": {
-    "py_compile_all_python": "PASS (14 files)",
-    "protocol_decoder_selftest": "PASS",
-    "protocol_overlay_selftest": "PASS",
-    "firmware_save_compat_selftest": "PASS",
-    "scope_filename_length_26_chars": "PASS",
-    "ftp_delayed_file_appearance_polling": "PASS (synthetic FTP)",
-    "ftp_capacity_aware_dynamic_wait_1_5GB": "PASS (>60 s synthetic growth)",
-    "ftp_header_final_size_mismatch": "PASS (stable FTP SIZE remains authoritative)",
-    "ftp_dynamic_soft_deadline_extension": "PASS (slow large-file synthetic growth)",
-    "ftp_absolute_wait_cap": "PASS (600 s configured hard maximum)",
-    "save_status_timeout_becomes_pending_not_success": "PASS",
-    "integrated_controller_enables_deferred_verification": "PASS",
-    "standalone_capture_deferred_verification_default": "OFF",
-    "viewer_mouse_cursor_hit_test": "preserved",
-    "viewer_right_drag_pan": "preserved",
-    "protocol_overlay": "preserved",
-    "viewer_default_digital_mode": "Raw"
-  },
-  "field_log_basis": {
-    "mho984_0072": "Memory save reported success; beta.7 FTP lookup returned matching_file_not_found before delayed publication.",
-    "mho984_0074": "SAVE status remained 0 for 60 seconds without SCPI error.",
-    "rigol_demo_beta8": "FTP appearance wait succeeded after about 2.06 s; 1,500,000,484-byte declared RG03 grew to about 980,000,328 bytes by 59.7 s, proving the fixed 60 s stable-SIZE wait was too short."
-  },
-  "beta9_dynamic_wait": {
-    "ftp_file_appearance_timeout_seconds": 180,
-    "ftp_size_poll_seconds": 0.5,
-    "stable_required_polls": 6,
-    "initial_min_wait_seconds": 60,
-    "unknown_header_wait_seconds": 120,
-    "forecast_min_rate_bytes_per_second": 8388608,
-    "forecast_safety_factor": 1.75,
-    "forecast_margin_seconds": 20,
-    "absolute_max_wait_seconds": 600,
-    "header_total_role": "timing hint only; never completion criterion",
-    "final_acceptance_requires": [
-      "expected filename or accepted numeric variant appears via FTP",
-      "remote FTP SIZE becomes stable",
-      "downloaded byte count equals stable remote SIZE",
-      "RG03 decoder validation succeeds"
+  "release": "v0.1.0-beta.10",
+  "publication_date": "2026-10-18",
+  "automated_validation": {
+    "implementation_commit": "b65f8282d7dc56aa122866539215762150b06aef",
+    "workflow_run": 38136634888,
+    "windows_python": [
+      "3.11",
+      "3.13",
+      "3.14"
+    ],
+    "result": "PASS",
+    "checks": [
+      "compileall",
+      "protocol_decoder_selftest",
+      "protocol_overlay_selftest",
+      "firmware_save_compat_selftest",
+      "beta10_p1_selftest"
     ]
   },
-  "hardware_validation": {
-    "beta8_on_rigol_demo_unit": "PARTIAL PASS: delayed file appearance handled; fixed 60 s SIZE wait insufficient for large capture",
-    "beta9_on_rigol_demo_unit": "PASS: tester reported successful beta.9 acquisition on RIGOL loaner/demo MHO984 with 500 Mpts storage depth option (2026-10-04)",
-    "note": "beta.9 dynamic wait passed synthetic regression testing and was subsequently reported successful on the loaner/demo MHO984."
-  }
+  "maintainer_confirmation": {
+    "date": "2026-10-18",
+    "status": "beta.10 checking complete; publication authorized",
+    "detail": "No per-test hardware results, firmware or acquisition settings supplied with confirmation."
+  },
+  "historical_beta9_report": {
+    "release": "v0.1.0-beta.9",
+    "tested_at": "2026-10-04",
+    "checks": {
+      "py_compile_all_python": "PASS (14 files)",
+      "protocol_decoder_selftest": "PASS",
+      "protocol_overlay_selftest": "PASS",
+      "firmware_save_compat_selftest": "PASS",
+      "scope_filename_length_26_chars": "PASS",
+      "ftp_delayed_file_appearance_polling": "PASS (synthetic FTP)",
+      "ftp_capacity_aware_dynamic_wait_1_5GB": "PASS (>60 s synthetic growth)",
+      "ftp_header_final_size_mismatch": "PASS (stable FTP SIZE remains authoritative)",
+      "ftp_dynamic_soft_deadline_extension": "PASS (slow large-file synthetic growth)",
+      "ftp_absolute_wait_cap": "PASS (600 s configured hard maximum)",
+      "save_status_timeout_becomes_pending_not_success": "PASS",
+      "integrated_controller_enables_deferred_verification": "PASS",
+      "standalone_capture_deferred_verification_default": "OFF",
+      "viewer_mouse_cursor_hit_test": "preserved",
+      "viewer_right_drag_pan": "preserved",
+      "protocol_overlay": "preserved",
+      "viewer_default_digital_mode": "Raw"
+    },
+    "field_log_basis": {
+      "mho984_0072": "Memory save reported success; beta.7 FTP lookup returned matching_file_not_found before delayed publication.",
+      "mho984_0074": "SAVE status remained 0 for 60 seconds without SCPI error.",
+      "rigol_demo_beta8": "FTP appearance wait succeeded after about 2.06 s; 1,500,000,484-byte declared RG03 grew to about 980,000,328 bytes by 59.7 s, proving the fixed 60 s stable-SIZE wait was too short."
+    },
+    "beta9_dynamic_wait": {
+      "ftp_file_appearance_timeout_seconds": 180,
+      "ftp_size_poll_seconds": 0.5,
+      "stable_required_polls": 6,
+      "initial_min_wait_seconds": 60,
+      "unknown_header_wait_seconds": 120,
+      "forecast_min_rate_bytes_per_second": 8388608,
+      "forecast_safety_factor": 1.75,
+      "forecast_margin_seconds": 20,
+      "absolute_max_wait_seconds": 600,
+      "header_total_role": "timing hint only; never completion criterion",
+      "final_acceptance_requires": [
+        "expected filename or accepted numeric variant appears via FTP",
+        "remote FTP SIZE becomes stable",
+        "downloaded byte count equals stable remote SIZE",
+        "RG03 decoder validation succeeds"
+      ]
+    },
+    "hardware_validation": {
+      "beta8_on_rigol_demo_unit": "PARTIAL PASS: delayed file appearance handled; fixed 60 s SIZE wait insufficient for large capture",
+      "beta9_on_rigol_demo_unit": "PASS: tester reported successful beta.9 acquisition on RIGOL loaner/demo MHO984 with 500 Mpts storage depth option (2026-10-04)",
+      "note": "beta.9 dynamic wait passed synthetic regression testing and was subsequently reported successful on the loaner/demo MHO984."
+    }
+  },
+  "historical_report_note": "Historical manually recorded PASS entries are not independent proof for the beta.9 main tree; beta.10 CI exposed and fixed decoder/Viewer syntax defects."
 }

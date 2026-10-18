@@ -1,4 +1,10 @@
-# Public Release Audit — v0.1.0-beta.9
+# Public Release Audit — v0.1.0-beta.10
+
+Current evidence is recorded in PUBLIC_RELEASE_TEST_REPORT.json. Windows CI run 38136634888 passed on Python 3.11, 3.13 and 3.14. The maintainer confirmed beta.10 checking complete and authorized publication on 2026-10-18; detailed hardware conditions were not supplied.
+
+Historical audit entries below are retained for context. They do not prove the old beta.9 main tree compiled: beta.10 CI found and fixed two checked-in syntax defects.
+
+## Historical beta.9 audit
 
 This file records the technical/publication checks performed when preparing this Beta package. It is not a legal opinion.
 
