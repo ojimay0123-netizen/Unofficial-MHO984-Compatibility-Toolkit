@@ -610,6 +610,87 @@ def validate_common_timebase(records: List[WaveformRecord]) -> Dict[str, Any]:
     mismatches = []
     variants = []
 
+    # Narrow recovery for a declared-complete Analog-only RG03 whose final
+    # Analog payload is slightly shorter than its WaveformHeader point count.
+    # All channels are cropped to the common valid prefix so Viewer data remain
+    # synchronized. This never applies when LA is present.
+    tail_short_records = [
+        r for r in records
+        if r.data.data_size_policy
+        == "final_analog_payload_short_at_declared_rg03_eof"
+    ]
+    all_analog = all(
+        r.data.name in {"CH1", "CH2", "CH3", "CH4"}
+        and r.data.data_type_code == 1
+        and r.data.bytes_per_point == 4
+        for r in records
+    )
+    if (
+        all_analog
+        and len(tail_short_records) == 1
+        and tail_short_records[0] is records[-1]
+    ):
+        origins_match = all(
+            _float_close(r.header.x_origin_s, ref_record.header.x_origin_s)
+            for r in records[1:]
+        )
+        increments_match = all(
+            _float_close(
+                r.header.x_increment_s,
+                ref_record.header.x_increment_s,
+            )
+            for r in records[1:]
+        )
+        spans_match = all(
+            _float_close(
+                r.header.record_span_s,
+                ref_record.header.record_span_s,
+                rel=1e-6,
+                abs_=max(abs(ref_record.header.x_increment_s) * 4.0, 1e-15),
+            )
+            for r in records[1:]
+        )
+        if origins_match and increments_match and spans_match:
+            common_points = min(
+                record_effective_points(r) for r in records
+            )
+            if common_points > 0:
+                common_xinc = float(ref_record.header.x_increment_s)
+                common_xorigin = float(ref_record.header.x_origin_s)
+                return {
+                    "synchronized": True,
+                    "partial_common_overlap": True,
+                    "full_record_complete": False,
+                    "common_overlap_points": int(common_points),
+                    "common_overlap_time_start_s": common_xorigin,
+                    "common_overlap_time_end_s": (
+                        common_xorigin
+                        + (common_points - 1) * common_xinc
+                    ),
+                    "recovery_policy": (
+                        "declared_complete_short_final_analog_tail;"
+                        "all_analog_channels_cropped_to_common_prefix"
+                    ),
+                    "reference": ref_eff,
+                    "mismatches": [],
+                    "sample_rate_or_storage_variants": [
+                        effective_record_timebase(r)
+                        for r in records
+                        if record_effective_points(r)
+                        != record_effective_points(ref_record)
+                    ],
+                    "records": [
+                        effective_record_timebase(r)
+                        for r in records
+                    ],
+                    "basis": (
+                        "same Analog-only acquisition headers; final Analog "
+                        "payload is a narrow declared-complete EOF-short "
+                        "firmware/export quirk; all decoded Analog channels "
+                        "are cropped to the common valid prefix"
+                    ),
+                }
+
     def span_close(a, b, inc_a, inc_b):
         tolerance = max(
             abs(inc_a),
@@ -690,6 +771,8 @@ def validate_common_timebase(records: List[WaveformRecord]) -> Dict[str, Any]:
 def extract_analog_float32(
     blob: Any,
     record: WaveformRecord,
+    *,
+    point_limit: Optional[int] = None,
 ) -> np.ndarray:
     d = record.data
     if d.data_type_code != 1 or d.bytes_per_point != 4:
@@ -697,10 +780,13 @@ def extract_analog_float32(
             f"{d.name}: expected observed analog type_code=1 / 4 bytes, "
             f"got type={d.data_type_code}, bytes={d.bytes_per_point}"
         )
+    count = record_effective_points(record)
+    if point_limit is not None:
+        count = min(count, int(point_limit))
     return np.frombuffer(
         blob,
         dtype="<f4",
-        count=record.header.points,
+        count=count,
         offset=d.payload_offset,
     )
 
@@ -710,6 +796,8 @@ def decode_analog_records_to_dataset(
     dataset_root: Path,
     blob: Any,
     records: List[WaveformRecord],
+    *,
+    point_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Decode RG03 analog float32 voltages directly.
@@ -736,7 +824,12 @@ def decode_analog_records_to_dataset(
         if rec is None:
             continue
 
-        volts = extract_analog_float32(blob, rec)
+        volts = extract_analog_float32(
+            blob,
+            rec,
+            point_limit=point_limit,
+        )
+        decoded_points = int(len(volts))
         bin_path = analog_dir / f"chan{n}.bin"
         pre_path = analog_dir / f"chan{n}_pre.txt"
         info_path = analog_dir / f"chan{n}_info.json"
@@ -750,7 +843,7 @@ def decode_analog_records_to_dataset(
         pre_fields = [
             2,                              # fmt: direct float32 voltage
             0,                              # mode
-            rec.header.points,
+            decoded_points,
             1,                              # count
             rec.header.x_increment_s,
             rec.header.x_origin_s,
@@ -766,7 +859,7 @@ def decode_analog_records_to_dataset(
 
         time_end = (
             rec.header.x_origin_s
-            + (rec.header.points - 1) * rec.header.x_increment_s
+            + (decoded_points - 1) * rec.header.x_increment_s
         )
 
         info = {
@@ -775,7 +868,13 @@ def decode_analog_records_to_dataset(
             "source": "RG03_memory_BIN_float32",
             "storage_dtype": "<f4",
             "storage_unit": "V",
-            "points": rec.header.points,
+            "points": decoded_points,
+            "declared_points": rec.header.points,
+            "effective_record_points": record_effective_points(rec),
+            "cropped_to_common_overlap": bool(
+                decoded_points < record_effective_points(rec)
+                or decoded_points < rec.header.points
+            ),
             "x_increment_s": rec.header.x_increment_s,
             "x_origin_s": rec.header.x_origin_s,
             "time_start_s": rec.header.x_origin_s,
