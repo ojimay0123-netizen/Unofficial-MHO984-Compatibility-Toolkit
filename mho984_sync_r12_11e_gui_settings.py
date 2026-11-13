@@ -980,6 +980,30 @@ def main():
     if cp.returncode != 0:
         raise R12Error(f"Decoder failed: {cp.returncode}")
 
+    decode_summary = {}
+    decode_summary_path = dataset / "decode_summary.json"
+    if decode_summary_path.is_file():
+        try:
+            decode_summary = json.loads(
+                decode_summary_path.read_text(encoding="utf-8")
+            )
+        except Exception:
+            decode_summary = {}
+
+    if decode_summary.get("partial_recovery"):
+        print("")
+        print(
+            "WARNING: RG03 Analog partial-overlap recovery was used."
+        )
+        print(
+            "All Analog channels were cropped to the synchronized "
+            f"common prefix: {decode_summary.get('common_overlap_points')} points"
+        )
+        print(
+            "The original Memory BIN is preserved unchanged; "
+            "this is not claimed as a complete full-length Analog record."
+        )
+
     timings["total_to_decoded_dataset_s"] = (
         time.perf_counter() - total_started
     )
@@ -997,6 +1021,12 @@ def main():
         "ultrasigma_used": False,
         "analog_scpi_waveform_transfers": 0,
         "memory_bin_transfers": len(structural_preflight_attempts),
+        "partial_recovery": bool(
+            decode_summary.get("partial_recovery")
+        ),
+        "common_overlap_points": decode_summary.get(
+            "common_overlap_points"
+        ),
         "lan_method": retrieval.get("successful_method"),
         "scope_file": f"C:/{expected_name}",
         "pc_file": str(bin_path),
@@ -1029,6 +1059,14 @@ def main():
         f"{len(structural_preflight_attempts)}"
     )
     print("Memory BIN duplicate copy      : avoided (direct to dataset/memory)")
+    if decode_summary.get("partial_recovery"):
+        print(
+            "Analog record completeness     : PARTIAL synchronized overlap"
+        )
+        print(
+            "Analog common overlap points   : "
+            f"{decode_summary.get('common_overlap_points')}"
+        )
     print(
         "Time to decoded dataset        : "
         f"{timings['total_to_decoded_dataset_s']:.3f} s"
