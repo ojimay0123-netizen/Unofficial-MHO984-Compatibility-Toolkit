@@ -409,11 +409,71 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
                 )
 
         if dh.payload_offset + dh.data_bytes > len(blob):
-            raise BinFormatError(
-                f"{dh.name}: effective payload exceeds file: "
-                f"offset={dh.payload_offset}, "
-                f"effective_bytes={dh.data_bytes}, file={len(blob)}"
+            available_bytes = max(0, len(blob) - dh.payload_offset)
+            shortfall_bytes = dh.data_bytes - available_bytes
+            previous_records_are_analog = all(
+                r.data.name in {"CH1", "CH2", "CH3", "CH4"}
+                and r.data.data_type_code == 1
+                and r.data.bytes_per_point == 4
+                for r in records
             )
+            last_record = index == waveform_count - 1
+
+            # 2026-11-14 real MHO984 observation (firmware 00.01.00):
+            # with a very deep Analog-only 2ch Memory BIN, the final Analog
+            # payload can end slightly before WaveformHeader.points*bpp while
+            # the RG03 FileHeader itself declares that shorter EOF as the
+            # complete file size.  Example:
+            #   CH2 payload offset = 500,000,328
+            #   header payload     = 500,000,000
+            #   actual file        = 996,000,328
+            #   available CH2      = 496,000,000
+            #   shortfall          =   4,000,000 bytes (1,000,000 float32)
+            #
+            # Recovery is intentionally narrow.  It is allowed only for the
+            # final Analog float32 record, only when every preceding record is
+            # also Analog, only when FileHeader total == actual EOF (scope says
+            # this shorter file is complete), and only for <=1% aligned loss.
+            # If FileHeader still declares a larger file, treat it as an
+            # incomplete transfer/save and continue to reject it.
+            max_tail_shortfall = max(
+                dh.bytes_per_point,
+                int(expected_bytes * 0.01),
+            )
+            final_analog_tail_quirk = (
+                last_record
+                and dh.name in {"CH1", "CH2", "CH3", "CH4"}
+                and dh.data_type_code == 1
+                and dh.bytes_per_point == 4
+                and dh.declared_data_bytes == expected_bytes
+                and dh.data_bytes == expected_bytes
+                and previous_records_are_analog
+                and total_file_bytes == actual_file_bytes
+                and available_bytes > 0
+                and available_bytes % dh.bytes_per_point == 0
+                and 0 < shortfall_bytes <= max_tail_shortfall
+            )
+
+            if final_analog_tail_quirk:
+                dh.data_bytes = available_bytes
+                dh.effective_points = (
+                    available_bytes // dh.bytes_per_point
+                )
+                dh.data_size_policy = (
+                    "final_analog_payload_short_at_declared_rg03_eof"
+                )
+            else:
+                raise BinFormatError(
+                    f"{dh.name}: effective payload exceeds file: "
+                    f"offset={dh.payload_offset}, "
+                    f"effective_bytes={dh.data_bytes}, "
+                    f"available_bytes={available_bytes}, "
+                    f"shortfall_bytes={shortfall_bytes}, "
+                    f"file={len(blob)}, "
+                    f"file_header_declared={total_file_bytes}, "
+                    f"file_header_matches_actual="
+                    f"{total_file_bytes == actual_file_bytes}"
+                )
 
         records.append(WaveformRecord(
             index=index,
@@ -440,6 +500,12 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
             "declared_data_bytes": r.data.declared_data_bytes,
             "effective_data_bytes": r.data.data_bytes,
             "bytes_per_point": r.data.bytes_per_point,
+            "declared_points": r.header.points,
+            "effective_points": (
+                r.data.effective_points
+                if r.data.effective_points is not None
+                else r.header.points
+            ),
             "policy": r.data.data_size_policy,
         }
         for r in records
