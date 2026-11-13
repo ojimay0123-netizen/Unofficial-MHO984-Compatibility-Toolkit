@@ -54,3 +54,6 @@ jobs:
 
       - name: beta.10 P1 hardening selftest
         run: python tests/beta10_p1_selftest.py
+
+      - name: RG03 short Analog tail hotfix selftest
+        run: python tests/rg03_analog_tail_hotfix_selftest.py
