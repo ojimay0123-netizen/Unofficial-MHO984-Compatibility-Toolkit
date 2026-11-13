@@ -77,7 +77,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-VERSION = "2026.08.29-r12.7f-public-beta2-timebase-reference"
+VERSION = "2026.11.14-r12.7g-analog-tail-overlap-hotfix"
 DEFAULT_DIGITAL_TIME_CALIBRATION_PPM = 2.091228967287936
 DEFAULT_DIGITAL_TIME_CALIBRATION_REFERENCE_S = 0.0
 FILE_HEADER_SIZE = 16
@@ -211,6 +211,11 @@ class DataHeader:
     reserved: int
     payload_offset: int
 
+    # Effective stored points when the final Analog payload is shorter than
+    # the WaveformHeader point count but the RG03 FileHeader explicitly
+    # declares the shorter file size as complete. None means header.points.
+    effective_points: Optional[int] = None
+
 
 @dataclass
 class WaveformRecord:
@@ -286,6 +291,7 @@ def parse_data_header(blob: Any, offset: int) -> DataHeader:
         data_size_policy="header_exact",
         reserved=reserved,
         payload_offset=offset + DATA_HEADER_SIZE,
+        effective_points=None,
     )
 
 
