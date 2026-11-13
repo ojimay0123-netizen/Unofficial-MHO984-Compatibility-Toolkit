@@ -1210,6 +1210,11 @@ def decode_to_dataset(
         )
 
     analog_only = la_record is None
+    analog_point_limit = (
+        int(sync_validation["common_overlap_points"])
+        if sync_validation.get("partial_common_overlap")
+        else None
+    )
 
     # R12 efficiency change: CH1-CH4 are decoded from this same Memory BIN.
     # No per-channel SCPI waveform transfer is required.
@@ -1218,6 +1223,7 @@ def decode_to_dataset(
             dataset_root,
             blob,
             records,
+            point_limit=analog_point_limit,
         )
     else:
         analog_decoded = describe_analog_records_without_rewrite(
