@@ -1514,6 +1514,12 @@ def decode_to_dataset(
         "source": "RG03_memory_BIN_float32",
         "channels": analog_decoded,
         "rewrite_performed": bool(rewrite_analog),
+        "partial_common_overlap": bool(
+            sync_validation.get("partial_common_overlap")
+        ),
+        "common_overlap_points": sync_validation.get(
+            "common_overlap_points"
+        ),
     }
 
     # Rewrite after Analog/common-source metadata has been added.
@@ -1553,7 +1559,17 @@ def decode_to_dataset(
         "source_file": f"memory/{bin_path.name}",
         "source_sha256": parse_report["source_sha256"],
         "format": "RG03",
-        "layout_validation": "passed",
+        "layout_validation": (
+            "passed_with_partial_common_analog_overlap"
+            if sync_validation.get("partial_common_overlap")
+            else "passed"
+        ),
+        "partial_common_analog_overlap": bool(
+            sync_validation.get("partial_common_overlap")
+        ),
+        "common_overlap_points": sync_validation.get(
+            "common_overlap_points"
+        ),
         "pc_analog_crosscheck": "not_required_single_BIN_source",
         "la_record_present": not analog_only,
     }
@@ -1595,11 +1611,24 @@ def decode_to_dataset(
 
         sync = acquisition.setdefault("synchronization", {})
         sync.update({
-            "basis": (
+            "basis": sync_validation.get(
+                "basis",
                 "single STOP record saved once as RG03 memory BIN; "
-                "Analog is decoded directly from the same BIN"
+                "Analog is decoded directly from the same BIN",
             ),
             "trigger_reference_s": 0.0,
+            "analog_partial_common_overlap": bool(
+                sync_validation.get("partial_common_overlap")
+            ),
+            "analog_full_record_complete": not bool(
+                sync_validation.get("partial_common_overlap")
+            ),
+            "analog_common_overlap_points": sync_validation.get(
+                "common_overlap_points"
+            ),
+            "analog_recovery_policy": sync_validation.get(
+                "recovery_policy"
+            ),
             "digital_timebase_verified_from_bin_header": False,
             "digital_complete_record_verified": False,
             "digital_status": "not_present",
@@ -1650,6 +1679,18 @@ def decode_to_dataset(
 
     result = {
         "success": True,
+        "partial_recovery": bool(
+            sync_validation.get("partial_common_overlap")
+        ),
+        "partial_recovery_reason": (
+            "final Analog payload shorter than declared points; "
+            "all Analog channels cropped to synchronized common prefix"
+            if sync_validation.get("partial_common_overlap")
+            else None
+        ),
+        "common_overlap_points": sync_validation.get(
+            "common_overlap_points"
+        ),
         "mode": "analog_only" if analog_only else "analog_plus_logic_analyzer",
         "dataset_root": str(dataset_root),
         "source_bin": str(bin_path),
