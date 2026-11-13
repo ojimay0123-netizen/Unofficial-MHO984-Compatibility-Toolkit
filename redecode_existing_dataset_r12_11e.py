@@ -49,6 +49,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("dataset", nargs="?", type=Path)
     ap.add_argument(
+        "--rewrite-analog",
+        action="store_true",
+        help=(
+            "Rewrite Analog chan*.bin from the Memory BIN. "
+            "If Analog files are missing, this is enabled automatically."
+        ),
+    )
+    ap.add_argument(
         "--digital-calibration-ppm",
         type=float,
         default=None,
@@ -67,14 +75,32 @@ def main() -> int:
     kwargs = {}
     if args.digital_calibration_ppm is not None:
         kwargs["digital_time_calibration_ppm"] = args.digital_calibration_ppm
+
+    analog_dir = dataset / "analog"
+    existing_analog = list(analog_dir.glob("chan[1-4].bin")) if analog_dir.exists() else []
+    rewrite_analog = bool(args.rewrite_analog or not existing_analog)
+    if rewrite_analog and not args.rewrite_analog:
+        print(
+            "Analog files are missing; Analog will be rebuilt from the "
+            "Memory BIN automatically."
+        )
+
     result = dec.decode_to_dataset(
         memory_bin,
         dataset,
         copy_memory_bin=False,
-        rewrite_analog=False,
+        rewrite_analog=rewrite_analog,
         **kwargs,
     )
-    print("Re-decode complete. Analog files were NOT rewritten.")
+    if rewrite_analog:
+        print("Re-decode complete. Analog files were rewritten.")
+    else:
+        print("Re-decode complete. Analog files were NOT rewritten.")
+    if result.get("partial_recovery"):
+        print(
+            "NOTE: partial synchronized Analog overlap recovery was used; "
+            f"common points={result.get('common_overlap_points')}"
+        )
     print(f"Digital event : {result.get('digital_event_file')}")
     print(f"Digital raw   : {result.get('digital_bus_file')}")
     print(f"Digital points: {result.get('digital_points')}")
