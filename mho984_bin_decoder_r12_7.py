@@ -519,6 +519,11 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
     return file_header, records, blob
 
 
+def record_effective_points(record: WaveformRecord) -> int:
+    value = record.data.effective_points
+    return int(record.header.points if value is None else value)
+
+
 def effective_record_timebase(record: WaveformRecord) -> Dict[str, Any]:
     """
     Return the physical sample timing represented by a record.
@@ -556,7 +561,7 @@ def effective_record_timebase(record: WaveformRecord) -> Dict[str, Any]:
         and d.bytes_per_point == 4
     )
 
-    logical_points = h.points
+    logical_points = record_effective_points(record)
     effective_x_increment_s = (
         h.x_increment_s * 2.0
         if large_la_stride2
@@ -565,7 +570,8 @@ def effective_record_timebase(record: WaveformRecord) -> Dict[str, Any]:
 
     return {
         "name": d.name,
-        "stored_points": h.points,
+        "stored_points": logical_points,
+        "declared_points": h.points,
         "logical_points": logical_points,
         "x_increment_s": effective_x_increment_s,
         "raw_header_x_increment_s": h.x_increment_s,
