@@ -77,7 +77,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-VERSION = "2026.08.29-r12.7f-public-beta2-timebase-reference"
+VERSION = "2026.11.14-r12.7i-auto-tail-recovery"
 DEFAULT_DIGITAL_TIME_CALIBRATION_PPM = 2.091228967287936
 DEFAULT_DIGITAL_TIME_CALIBRATION_REFERENCE_S = 0.0
 FILE_HEADER_SIZE = 16
@@ -211,6 +211,11 @@ class DataHeader:
     reserved: int
     payload_offset: int
 
+    # Effective stored points when the final Analog payload is shorter than
+    # the WaveformHeader point count but the RG03 FileHeader explicitly
+    # declares the shorter file size as complete. None means header.points.
+    effective_points: Optional[int] = None
+
 
 @dataclass
 class WaveformRecord:
@@ -286,10 +291,11 @@ def parse_data_header(blob: Any, offset: int) -> DataHeader:
         data_size_policy="header_exact",
         reserved=reserved,
         payload_offset=offset + DATA_HEADER_SIZE,
+        effective_points=None,
     )
 
 
-def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.mmap]:
+def parse_rg03(path: Path, *, recover_incomplete_analog_tail: bool = True) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.mmap]:
     # Do not materialize deep-memory captures as one Python bytes object.
     # A read-only mmap keeps parser/extractor semantics (len, slicing,
     # struct.unpack_from and np.frombuffer) while avoiding a second full-size
@@ -403,11 +409,81 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
                 )
 
         if dh.payload_offset + dh.data_bytes > len(blob):
-            raise BinFormatError(
-                f"{dh.name}: effective payload exceeds file: "
-                f"offset={dh.payload_offset}, "
-                f"effective_bytes={dh.data_bytes}, file={len(blob)}"
+            available_bytes = max(0, len(blob) - dh.payload_offset)
+            shortfall_bytes = dh.data_bytes - available_bytes
+            previous_records_are_analog = all(
+                r.data.name in {"CH1", "CH2", "CH3", "CH4"}
+                and r.data.data_type_code == 1
+                and r.data.bytes_per_point == 4
+                for r in records
             )
+            last_record = index == waveform_count - 1
+
+            # 2026-11-14 MHO984 report (full firmware version not supplied):
+            # with a very deep Analog-only 2ch Memory BIN, the final Analog
+            # payload can end slightly before WaveformHeader.points*bpp while
+            # the RG03 FileHeader itself declares that shorter EOF as the
+            # complete file size.  Example:
+            #   CH2 payload offset = 500,000,328
+            #   header payload     = 500,000,000
+            #   actual file        = 996,000,328
+            #   available CH2      = 496,000,000
+            #   shortfall          =   4,000,000 bytes (1,000,000 float32)
+            #
+            # Recovery is intentionally narrow.  It is allowed only for the
+            # final Analog float32 record, only when every preceding record is
+            # also Analog, only when FileHeader total == actual EOF (scope says
+            # this shorter file is complete), and only for <=1% aligned loss.
+            # For a larger FileHeader, automatic recovery additionally requires
+            # its excess to equal this exact tail loss; --strict-bin disables it.
+            max_tail_shortfall = max(
+                dh.bytes_per_point,
+                int(expected_bytes * 0.01),
+            )
+            final_analog_tail_quirk = (
+                last_record
+                and dh.name in {"CH1", "CH2", "CH3", "CH4"}
+                and dh.data_type_code == 1
+                and dh.bytes_per_point == 4
+                and dh.declared_data_bytes == expected_bytes
+                and dh.data_bytes == expected_bytes
+                and previous_records_are_analog
+                and (total_file_bytes == actual_file_bytes or (
+                    recover_incomplete_analog_tail
+                    and total_file_bytes - actual_file_bytes == shortfall_bytes
+                ))
+                and available_bytes > 0
+                and available_bytes % dh.bytes_per_point == 0
+                and 0 < shortfall_bytes <= max_tail_shortfall
+            )
+
+            if final_analog_tail_quirk:
+                dh.data_bytes = available_bytes
+                dh.effective_points = (
+                    available_bytes // dh.bytes_per_point
+                )
+                dh.data_size_policy = (
+                    "final_analog_payload_short_at_declared_rg03_eof"
+                    if total_file_bytes == actual_file_bytes else
+                    "recovery_incomplete_final_analog_tail"
+                )
+                file_header["incomplete_source_recovered"] = (
+                    total_file_bytes != actual_file_bytes
+                )
+                file_header["source_completeness"] = "incomplete_analog_tail"
+                file_header["missing_tail_bytes"] = shortfall_bytes
+            else:
+                raise BinFormatError(
+                    f"{dh.name}: effective payload exceeds file: "
+                    f"offset={dh.payload_offset}, "
+                    f"effective_bytes={dh.data_bytes}, "
+                    f"available_bytes={available_bytes}, "
+                    f"shortfall_bytes={shortfall_bytes}, "
+                    f"file={len(blob)}, "
+                    f"file_header_declared={total_file_bytes}, "
+                    f"file_header_matches_actual="
+                    f"{total_file_bytes == actual_file_bytes}"
+                )
 
         records.append(WaveformRecord(
             index=index,
@@ -434,6 +510,12 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
             "declared_data_bytes": r.data.declared_data_bytes,
             "effective_data_bytes": r.data.data_bytes,
             "bytes_per_point": r.data.bytes_per_point,
+            "declared_points": r.header.points,
+            "effective_points": (
+                r.data.effective_points
+                if r.data.effective_points is not None
+                else r.header.points
+            ),
             "policy": r.data.data_size_policy,
         }
         for r in records
@@ -445,6 +527,11 @@ def parse_rg03(path: Path) -> Tuple[Dict[str, Any], List[WaveformRecord], mmap.m
         raise BinFormatError(f"duplicate waveform names: {names}")
 
     return file_header, records, blob
+
+
+def record_effective_points(record: WaveformRecord) -> int:
+    value = record.data.effective_points
+    return int(record.header.points if value is None else value)
 
 
 def effective_record_timebase(record: WaveformRecord) -> Dict[str, Any]:
@@ -484,7 +571,7 @@ def effective_record_timebase(record: WaveformRecord) -> Dict[str, Any]:
         and d.bytes_per_point == 4
     )
 
-    logical_points = h.points
+    logical_points = record_effective_points(record)
     effective_x_increment_s = (
         h.x_increment_s * 2.0
         if large_la_stride2
@@ -493,7 +580,8 @@ def effective_record_timebase(record: WaveformRecord) -> Dict[str, Any]:
 
     return {
         "name": d.name,
-        "stored_points": h.points,
+        "stored_points": logical_points,
+        "declared_points": h.points,
         "logical_points": logical_points,
         "x_increment_s": effective_x_increment_s,
         "raw_header_x_increment_s": h.x_increment_s,
@@ -531,6 +619,88 @@ def validate_common_timebase(records: List[WaveformRecord]) -> Dict[str, Any]:
     ref_eff = effective_record_timebase(ref_record)
     mismatches = []
     variants = []
+
+    # Narrow recovery for a declared-complete Analog-only RG03 whose final
+    # Analog payload is slightly shorter than its WaveformHeader point count.
+    # All channels are cropped to the common valid prefix so Viewer data remain
+    # synchronized. This never applies when LA is present.
+    tail_short_records = [
+        r for r in records
+        if r.data.data_size_policy
+        in {"final_analog_payload_short_at_declared_rg03_eof",
+            "recovery_incomplete_final_analog_tail"}
+    ]
+    all_analog = all(
+        r.data.name in {"CH1", "CH2", "CH3", "CH4"}
+        and r.data.data_type_code == 1
+        and r.data.bytes_per_point == 4
+        for r in records
+    )
+    if (
+        all_analog
+        and len(tail_short_records) == 1
+        and tail_short_records[0] is records[-1]
+    ):
+        origins_match = all(
+            _float_close(r.header.x_origin_s, ref_record.header.x_origin_s)
+            for r in records[1:]
+        )
+        increments_match = all(
+            _float_close(
+                r.header.x_increment_s,
+                ref_record.header.x_increment_s,
+            )
+            for r in records[1:]
+        )
+        spans_match = all(
+            _float_close(
+                r.header.record_span_s,
+                ref_record.header.record_span_s,
+                rel=1e-6,
+                abs_=max(abs(ref_record.header.x_increment_s) * 4.0, 1e-15),
+            )
+            for r in records[1:]
+        )
+        if origins_match and increments_match and spans_match:
+            common_points = min(
+                record_effective_points(r) for r in records
+            )
+            if common_points > 0:
+                common_xinc = float(ref_record.header.x_increment_s)
+                common_xorigin = float(ref_record.header.x_origin_s)
+                return {
+                    "synchronized": True,
+                    "partial_common_overlap": True,
+                    "full_record_complete": False,
+                    "common_overlap_points": int(common_points),
+                    "common_overlap_time_start_s": common_xorigin,
+                    "common_overlap_time_end_s": (
+                        common_xorigin
+                        + (common_points - 1) * common_xinc
+                    ),
+                    "recovery_policy": (
+                        tail_short_records[0].data.data_size_policy + ";" +
+                        "all_analog_channels_cropped_to_common_prefix"
+                    ),
+                    "reference": ref_eff,
+                    "mismatches": [],
+                    "sample_rate_or_storage_variants": [
+                        effective_record_timebase(r)
+                        for r in records
+                        if record_effective_points(r)
+                        != record_effective_points(ref_record)
+                    ],
+                    "records": [
+                        effective_record_timebase(r)
+                        for r in records
+                    ],
+                    "basis": (
+                        "same Analog-only acquisition headers; final Analog "
+                        "payload is a narrow declared-complete EOF-short "
+                        "firmware/export quirk; all decoded Analog channels "
+                        "are cropped to the common valid prefix"
+                    ),
+                }
 
     def span_close(a, b, inc_a, inc_b):
         tolerance = max(
@@ -612,6 +782,8 @@ def validate_common_timebase(records: List[WaveformRecord]) -> Dict[str, Any]:
 def extract_analog_float32(
     blob: Any,
     record: WaveformRecord,
+    *,
+    point_limit: Optional[int] = None,
 ) -> np.ndarray:
     d = record.data
     if d.data_type_code != 1 or d.bytes_per_point != 4:
@@ -619,10 +791,13 @@ def extract_analog_float32(
             f"{d.name}: expected observed analog type_code=1 / 4 bytes, "
             f"got type={d.data_type_code}, bytes={d.bytes_per_point}"
         )
+    count = record_effective_points(record)
+    if point_limit is not None:
+        count = min(count, int(point_limit))
     return np.frombuffer(
         blob,
         dtype="<f4",
-        count=record.header.points,
+        count=count,
         offset=d.payload_offset,
     )
 
@@ -632,6 +807,8 @@ def decode_analog_records_to_dataset(
     dataset_root: Path,
     blob: Any,
     records: List[WaveformRecord],
+    *,
+    point_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Decode RG03 analog float32 voltages directly.
@@ -658,7 +835,12 @@ def decode_analog_records_to_dataset(
         if rec is None:
             continue
 
-        volts = extract_analog_float32(blob, rec)
+        volts = extract_analog_float32(
+            blob,
+            rec,
+            point_limit=point_limit,
+        )
+        decoded_points = int(len(volts))
         bin_path = analog_dir / f"chan{n}.bin"
         pre_path = analog_dir / f"chan{n}_pre.txt"
         info_path = analog_dir / f"chan{n}_info.json"
@@ -672,7 +854,7 @@ def decode_analog_records_to_dataset(
         pre_fields = [
             2,                              # fmt: direct float32 voltage
             0,                              # mode
-            rec.header.points,
+            decoded_points,
             1,                              # count
             rec.header.x_increment_s,
             rec.header.x_origin_s,
@@ -688,7 +870,7 @@ def decode_analog_records_to_dataset(
 
         time_end = (
             rec.header.x_origin_s
-            + (rec.header.points - 1) * rec.header.x_increment_s
+            + (decoded_points - 1) * rec.header.x_increment_s
         )
 
         info = {
@@ -697,7 +879,13 @@ def decode_analog_records_to_dataset(
             "source": "RG03_memory_BIN_float32",
             "storage_dtype": "<f4",
             "storage_unit": "V",
-            "points": rec.header.points,
+            "points": decoded_points,
+            "declared_points": rec.header.points,
+            "effective_record_points": record_effective_points(rec),
+            "cropped_to_common_overlap": bool(
+                decoded_points < record_effective_points(rec)
+                or decoded_points < rec.header.points
+            ),
             "x_increment_s": rec.header.x_increment_s,
             "x_origin_s": rec.header.x_origin_s,
             "time_start_s": rec.header.x_origin_s,
@@ -1007,6 +1195,7 @@ def decode_to_dataset(
     rewrite_analog: bool = True,
     digital_time_calibration_ppm: float = DEFAULT_DIGITAL_TIME_CALIBRATION_PPM,
     digital_time_calibration_reference_s: float = DEFAULT_DIGITAL_TIME_CALIBRATION_REFERENCE_S,
+    recover_incomplete_analog_tail: bool = True,
 ) -> Dict[str, Any]:
     bin_path = Path(bin_path).resolve()
     dataset_root = Path(dataset_root).resolve()
@@ -1018,7 +1207,12 @@ def decode_to_dataset(
     digital_dir.mkdir(parents=True, exist_ok=True)
     memory_dir.mkdir(parents=True, exist_ok=True)
 
-    file_header, records, blob = parse_rg03(bin_path)
+    file_header, records, blob = parse_rg03(
+        bin_path, recover_incomplete_analog_tail=recover_incomplete_analog_tail
+    )
+    if file_header.get("incomplete_source_recovered"):
+        print("WARNING: incomplete BIN recovered; missing tail is NOT restored. "
+              "All analog channels use only the common available prefix.")
     record_map = {r.data.name: r for r in records}
 
     la_record = record_map.get("LA")
@@ -1033,6 +1227,26 @@ def decode_to_dataset(
         )
 
     analog_only = la_record is None
+    if sync_validation.get("partial_common_overlap"):
+        warning = (
+            "注意: アナログ末尾が不足しているため、全CHを共通の有効範囲 "
+            f"{sync_validation['common_overlap_points']:,} 点へ短縮しました。"
+            "不足部分の補完は行いません。完全な取得データではありません。"
+            "取得途中の保存または転送・保存の欠損などが考えられますが、原因は未確定です。"
+        )
+        print(warning)
+        (dataset_root / "INCOMPLETE_ANALOG_WARNING.txt").write_text(
+            warning + "\n" + json.dumps(file_header, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    else:
+        (dataset_root / "INCOMPLETE_ANALOG_WARNING.txt").unlink(missing_ok=True)
+
+    analog_point_limit = (
+        int(sync_validation["common_overlap_points"])
+        if sync_validation.get("partial_common_overlap")
+        else None
+    )
 
     # R12 efficiency change: CH1-CH4 are decoded from this same Memory BIN.
     # No per-channel SCPI waveform transfer is required.
@@ -1041,6 +1255,7 @@ def decode_to_dataset(
             dataset_root,
             blob,
             records,
+            point_limit=analog_point_limit,
         )
     else:
         analog_decoded = describe_analog_records_without_rewrite(
@@ -1331,6 +1546,12 @@ def decode_to_dataset(
         "source": "RG03_memory_BIN_float32",
         "channels": analog_decoded,
         "rewrite_performed": bool(rewrite_analog),
+        "partial_common_overlap": bool(
+            sync_validation.get("partial_common_overlap")
+        ),
+        "common_overlap_points": sync_validation.get(
+            "common_overlap_points"
+        ),
     }
 
     # Rewrite after Analog/common-source metadata has been added.
@@ -1370,7 +1591,17 @@ def decode_to_dataset(
         "source_file": f"memory/{bin_path.name}",
         "source_sha256": parse_report["source_sha256"],
         "format": "RG03",
-        "layout_validation": "passed",
+        "layout_validation": (
+            "passed_with_partial_common_analog_overlap"
+            if sync_validation.get("partial_common_overlap")
+            else "passed"
+        ),
+        "partial_common_analog_overlap": bool(
+            sync_validation.get("partial_common_overlap")
+        ),
+        "common_overlap_points": sync_validation.get(
+            "common_overlap_points"
+        ),
         "pc_analog_crosscheck": "not_required_single_BIN_source",
         "la_record_present": not analog_only,
     }
@@ -1412,11 +1643,24 @@ def decode_to_dataset(
 
         sync = acquisition.setdefault("synchronization", {})
         sync.update({
-            "basis": (
+            "basis": sync_validation.get(
+                "basis",
                 "single STOP record saved once as RG03 memory BIN; "
-                "Analog is decoded directly from the same BIN"
+                "Analog is decoded directly from the same BIN",
             ),
             "trigger_reference_s": 0.0,
+            "analog_partial_common_overlap": bool(
+                sync_validation.get("partial_common_overlap")
+            ),
+            "analog_full_record_complete": not bool(
+                sync_validation.get("partial_common_overlap")
+            ),
+            "analog_common_overlap_points": sync_validation.get(
+                "common_overlap_points"
+            ),
+            "analog_recovery_policy": sync_validation.get(
+                "recovery_policy"
+            ),
             "digital_timebase_verified_from_bin_header": False,
             "digital_complete_record_verified": False,
             "digital_status": "not_present",
@@ -1467,6 +1711,18 @@ def decode_to_dataset(
 
     result = {
         "success": True,
+        "partial_recovery": bool(
+            sync_validation.get("partial_common_overlap")
+        ),
+        "partial_recovery_reason": (
+            "final Analog payload shorter than declared points; "
+            "all Analog channels cropped to synchronized common prefix"
+            if sync_validation.get("partial_common_overlap")
+            else None
+        ),
+        "common_overlap_points": sync_validation.get(
+            "common_overlap_points"
+        ),
         "mode": "analog_only" if analog_only else "analog_plus_logic_analyzer",
         "dataset_root": str(dataset_root),
         "source_bin": str(bin_path),
@@ -1542,12 +1798,25 @@ def main() -> None:
             f"reference profile, not a universal calibration (reference: {DEFAULT_DIGITAL_TIME_CALIBRATION_PPM:.9f})."
         ),
     )
+    tail_options = ap.add_mutually_exclusive_group()
+    tail_options.add_argument(
+        "--recover-incomplete-analog-tail", action="store_true",
+        dest="recover_incomplete_analog_tail",
+        help="Recover a narrowly validated final analog tail (default).",
+    )
+    tail_options.add_argument(
+        "--strict-bin", action="store_false",
+        dest="recover_incomplete_analog_tail",
+        help="Reject incomplete analog tails when file size differs from its header.",
+    )
+    ap.set_defaults(recover_incomplete_analog_tail=True)
     args = ap.parse_args()
 
     result = decode_to_dataset(
         args.bin_file,
         args.dataset_folder,
         copy_memory_bin=not args.no_copy,
+        recover_incomplete_analog_tail=args.recover_incomplete_analog_tail,
         digital_time_calibration_ppm=args.digital_calibration_ppm,
     )
 

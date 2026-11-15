@@ -25,3 +25,14 @@ Online acquisition is guarded for MHO984. RG03/LA/FTP behavior is empirical and 
 ## 大容量Memory BIN
 
 beta.9はFTP SIZEが成長中の間、容量と観測速度に応じて待機を延長しますが、無限待機防止のhard upper boundは600秒です。500 Mpts storage depth option搭載の貸出デモMHO984で成功報告がありますが、全メモリ長・全Firmware・全LAN速度の上限を保証するものではありません。
+
+
+## beta.10.1 partial analog recovery
+
+- 保存済みBINをメイン画面から開く際、条件を満たす末尾不足を自動救出します。
+- アナログfloat32のみ・最終レコードのみ・不足率1%以下・サンプル境界整列・ヘッダー差との整合を確認し、時間軸が一致するCHを共通の有効先頭範囲へ短縮します。
+- 補間・ゼロ埋めは行いません。ログ、`INCOMPLETE_ANALOG_WARNING.txt`、JSONに不完全データとして記録します。元BINは変更しません。
+- CLIの`--strict-bin`で、宣言サイズと異なる不完全末尾を拒否できます。
+- 2026-11-15、利用者から今回の実BINおよびWindows実機でr12.7iの新版動作確認完了が報告されました。取得途中の保存という原因は未確定です。詳細は[実機記録](docs/BETA10_1_VALIDATION.md)を参照してください。
+
+Recovery cannot distinguish acquisition-in-progress saving from transfer/save loss or detect arbitrary missing bytes inside a payload. LA and larger/unaligned tail loss remain rejected. This changes decoding, not scope STOP/save sequencing.
