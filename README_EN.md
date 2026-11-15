@@ -1,10 +1,10 @@
-# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.10.1
+# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.10.2
 
 An independent, unofficial Windows toolkit for interoperability with the RIGOL MHO984. The acquisition engine is r12.11e and the Viewer is r13.5. Normal workflows are now launched from one main window.
 
 > This project is not an official RIGOL product and is not affiliated with, endorsed by, or warranted by RIGOL Technologies Co., Ltd. RIGOL and product names belong to their respective owners and are used only to identify the interoperability target.
 
-## beta.10.1: アナログ末尾不足への対応
+## beta.10.2: アナログ末尾不足への対応
 
 - 保存済みBINをメイン画面から開く際、条件を満たす末尾不足を自動救出します。
 - アナログfloat32のみ・最終レコードのみ・不足率1%以下・サンプル境界整列・ヘッダー差との整合を確認し、時間軸が一致するCHを共通の有効先頭範囲へ短縮します。
