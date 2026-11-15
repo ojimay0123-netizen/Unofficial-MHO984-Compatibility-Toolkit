@@ -1234,7 +1234,10 @@ def decode_to_dataset(
             "不足部分の補完は行いません。完全な取得データではありません。"
             "取得途中の保存または転送・保存の欠損などが考えられますが、原因は未確定です。"
         )
-        print(warning)
+        try:
+            print(warning)
+        except UnicodeEncodeError:
+            print("WARNING: incomplete analog capture; see INCOMPLETE_ANALOG_WARNING.txt (UTF-8).")
         (dataset_root / "INCOMPLETE_ANALOG_WARNING.txt").write_text(
             warning + "\n" + json.dumps(file_header, ensure_ascii=False, indent=2),
             encoding="utf-8",
