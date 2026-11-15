@@ -1,8 +1,16 @@
-# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.10
+# Unofficial MHO984 Compatibility Toolkit v0.1.0-beta.10.1
 
 An independent, unofficial Windows toolkit for interoperability with the RIGOL MHO984. The acquisition engine is r12.11e and the Viewer is r13.5. Normal workflows are now launched from one main window.
 
 > This project is not an official RIGOL product and is not affiliated with, endorsed by, or warranted by RIGOL Technologies Co., Ltd. RIGOL and product names belong to their respective owners and are used only to identify the interoperability target.
+
+## beta.10.1: アナログ末尾不足への対応
+
+- 保存済みBINをメイン画面から開く際、条件を満たす末尾不足を自動救出します。
+- アナログfloat32のみ・最終レコードのみ・不足率1%以下・サンプル境界整列・ヘッダー差との整合を確認し、時間軸が一致するCHを共通の有効先頭範囲へ短縮します。
+- 補間・ゼロ埋めは行いません。ログ、`INCOMPLETE_ANALOG_WARNING.txt`、JSONに不完全データとして記録します。元BINは変更しません。
+- CLIの`--strict-bin`で、宣言サイズと異なる不完全末尾を拒否できます。
+- 2026-11-15、利用者から今回の実BINおよびWindows実機でr12.7iの新版動作確認完了が報告されました。取得途中の保存という原因は未確定です。詳細は[実機記録](docs/BETA10_1_VALIDATION.md)を参照してください。
 
 ## beta.10: acquisition hardening / 取得処理の改善
 

@@ -54,3 +54,6 @@ jobs:
 
       - name: beta.10 P1 hardening selftest
         run: python tests/beta10_p1_selftest.py
+
+      - name: Analog tail recovery selftest
+        run: python tests/analog_tail_selftest.py
