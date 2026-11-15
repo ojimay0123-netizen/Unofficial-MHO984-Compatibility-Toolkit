@@ -1,6 +1,6 @@
-# MHO984 Compatibility Toolkit v0.1.0-beta.10.1
+# MHO984 Compatibility Toolkit v0.1.0-beta.10.2
 
-## beta.10.1: アナログ末尾不足への対応
+## beta.10.2: アナログ末尾不足への対応
 
 - 保存済みBINをメイン画面から開く際、条件を満たす末尾不足を自動救出します。
 - アナログfloat32のみ・最終レコードのみ・不足率1%以下・サンプル境界整列・ヘッダー差との整合を確認し、時間軸が一致するCHを共通の有効先頭範囲へ短縮します。
@@ -44,3 +44,7 @@ MHO984 community-testing beta. Other models remain unvalidated. CAN FD is not im
 ## Full Changelog
 
 https://github.com/ojimay0123-netizen/Unofficial-MHO984-Compatibility-Toolkit/compare/v0.1.0-beta.9...v0.1.0-beta.10
+
+## Release tag correction
+
+The pre-existing v0.1.0-beta.10.1 tag points to the previous beta.10 commit. v0.1.0-beta.10.2 is the distributable release of the r12.7i fix and supersedes that tag; existing tags are preserved. Windows Python 3.11, 3.13 and 3.14 passed workflow 43719420172.
